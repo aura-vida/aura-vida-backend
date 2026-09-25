@@ -1,12 +1,12 @@
-import { supabase } from '../config/supabase.js';
+import { supabaseAuth } from '../config/supabase.js';
 import { createUserProfile, getUserProfile } from '../models/user.model.js';
 
 export const register = async (req, res) => {
     try {
         const { email, password, name, role = 'Customer' } = req.body;
 
-        // 1. Create user in Supabase Auth
-        const { data: authData, error: authError } = await supabase.auth.signUp({
+        // 1. Create user in Supabase Auth (using anon-key client to avoid session contamination)
+        const { data: authData, error: authError } = await supabaseAuth.auth.signUp({
             email,
             password,
         });
@@ -24,13 +24,10 @@ export const register = async (req, res) => {
         let userProfile = null;
 
         if (userId) {
-            // 2. Create user profile in public.User table
-            // In a real scenario, you'd map the 'role' string to a roleId from the Role table.
-            // For now, we pass it as a simple representation.
             try {
+                // 2. Create profile + assign role using the SERVICE ROLE client (bypasses RLS)
                 userProfile = await createUserProfile(userId, name, email, role);
             } catch (profileError) {
-                // If profile creation fails, we might still have the auth user created.
                 console.error('Profile creation failed:', profileError);
             }
         }
@@ -49,16 +46,16 @@ export const login = async (req, res) => {
     try {
         const { email, password } = req.body;
 
-        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        const { data: authData, error: authError } = await supabaseAuth.auth.signInWithPassword({
             email,
             password,
         });
-        console.log("email", email);
+
         if (authError) {
             return res.status(401).json({ error: authError.message });
         }
 
-        // Fetch user profile to get roles and details
+        // Fetch user profile using the SERVICE ROLE client
         let userProfile = null;
         try {
             userProfile = await getUserProfile(authData.user.id);
@@ -78,9 +75,7 @@ export const login = async (req, res) => {
 
 export const logout = async (req, res) => {
     try {
-        // Requires getting the user's token, but supabase handles this via the current session if client is authenticated.
-        // For a backend API, we usually expect the token to be sent. We can sign out via admin API or just instruct client to discard.
-        const { error } = await supabase.auth.signOut();
+        const { error } = await supabaseAuth.auth.signOut();
 
         if (error) {
             return res.status(400).json({ error: error.message });
@@ -94,9 +89,9 @@ export const logout = async (req, res) => {
 
 export const sendOtp = async (req, res) => {
     try {
-        const { identifier } = req.body; // usually email
+        const { identifier } = req.body;
 
-        const { error } = await supabase.auth.signInWithOtp({
+        const { error } = await supabaseAuth.auth.signInWithOtp({
             email: identifier,
         });
 
@@ -114,7 +109,7 @@ export const verifyOtp = async (req, res) => {
     try {
         const { identifier, otp } = req.body;
 
-        const { data, error } = await supabase.auth.verifyOtp({
+        const { data, error } = await supabaseAuth.auth.verifyOtp({
             email: identifier,
             token: otp,
             type: 'email',
@@ -124,7 +119,6 @@ export const verifyOtp = async (req, res) => {
             return res.status(401).json({ error: error.message });
         }
 
-        // Attempt to fetch profile
         let userProfile = null;
         if (data.user) {
             try {
@@ -141,3 +135,63 @@ export const verifyOtp = async (req, res) => {
         res.status(500).json({ error: 'Internal Server Error' });
     }
 };
+
+export const forgotPassword = async (req, res) => {
+    try {
+        const { email } = req.body;
+        if (!email) return res.status(400).json({ error: 'Email is required' });
+
+        const { error } = await supabaseAuth.auth.resetPasswordForEmail(email);
+
+        if (error) {
+            return res.status(400).json({ error: error.message });
+        }
+
+        res.status(200).json({ message: 'Password reset request sent successfully' });
+    } catch (error) {
+        console.error('forgotPassword error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+};
+
+export const resetPassword = async (req, res) => {
+    try {
+        const { token } = req.params; // Token moved to params
+        const { email, password, newPassword } = req.body;
+
+        // Use newPassword if provided, otherwise fallback to password
+        const finalPassword = newPassword || password;
+
+        if (!email || !token || !finalPassword) {
+            return res.status(400).json({ error: 'Missing required fields: email, token (in URL), and password/newPassword' });
+        }
+
+        // 1. Verify the token_hash from the reset email link (Supabase PKCE flow)
+        const { data: verifyData, error: verifyError } = await supabaseAuth.auth.verifyOtp({
+            token_hash: token,   // Supabase reset emails use token_hash, not token
+            type: 'recovery',
+        });
+
+        if (verifyError || !verifyData.user) {
+            return res.status(401).json({ error: verifyError?.message || 'Invalid or expired reset token' });
+        }
+
+        // 2. verifyOtp with token_hash already returns a valid session — use it directly
+        const { error: updateError } = await supabaseAuth.auth.updateUser({
+            password: finalPassword
+        });
+
+        if (updateError) {
+            return res.status(400).json({ error: updateError.message });
+        }
+
+        // Log out immediately after reset for security
+        await supabaseAuth.auth.signOut();
+
+        res.status(200).json({ message: 'Password reset successfully' });
+    } catch (error) {
+        console.error('resetPassword error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+};
+

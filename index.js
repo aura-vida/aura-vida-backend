@@ -3,6 +3,10 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import swaggerUi from 'swagger-ui-express';
 import authRoutes from './src/routes/auth.routes.js';
+import userRoutes from './src/routes/user.routes.js';
+import practitionerRoutes from './src/routes/practitioner.routes.js';
+import availabilityRoutes from './src/routes/availability.routes.js';
+import serviceRoutes from './src/routes/service.routes.js';
 import { swaggerSpec } from './src/config/swagger.js';
 
 dotenv.config();
@@ -16,13 +20,15 @@ app.use(express.json());
 // ── Swagger UI ──────────────────────────────────────────────
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
     customSiteTitle: 'Aura Vida API Docs',
-    swaggerOptions: {
-        persistAuthorization: true, // keeps the JWT bearer token set between page refreshes
-    }
+    swaggerOptions: { persistAuthorization: true }
 }));
 
 // ── Routes ──────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api', practitionerRoutes);
+app.use('/api', availabilityRoutes);
+app.use('/api', serviceRoutes);
 
 // Test route
 app.get('/', (req, res) => {

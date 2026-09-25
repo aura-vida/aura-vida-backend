@@ -1,6 +1,8 @@
 import swaggerJsdoc from 'swagger-jsdoc';
 
 const options = {
+    failOnErrors: true,
+
     definition: {
         openapi: '3.0.0',
         info: {
@@ -14,6 +16,27 @@ const options = {
                 description: 'Local Development Server',
             },
         ],
+
+        // ── Swagger Section Order ───────────────────────────────────────
+        tags: [
+            {
+                name: 'Auth',
+                description: 'Authentication and session management',
+            },
+            {
+                name: 'Users',
+                description: 'Authenticated user profile and appointment management',
+            },
+            {
+                name: 'Practitioners',
+                description: 'Practitioner listing, admin management and self-service',
+            },
+            {
+                name: 'Availability',
+                description: 'Practitioner scheduling and available slot APIs',
+            },
+        ],
+
         components: {
             securitySchemes: {
                 BearerAuth: {
@@ -94,6 +117,15 @@ const options = {
                                 token_type: { type: 'string', example: 'bearer' },
                             },
                         },
+                    },
+                },
+                Pagination: {
+                    type: 'object',
+                    properties: {
+                        page: { type: 'integer', example: 1 },
+                        limit: { type: 'integer', example: 10 },
+                        total: { type: 'integer', example: 45 },
+                        totalPages: { type: 'integer', example: 5 },
                     },
                 },
                 ErrorResponse: {
