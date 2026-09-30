@@ -6,9 +6,9 @@ const options = {
     definition: {
         openapi: '3.0.0',
         info: {
-            title: 'Aura Vida Backend API',
+            title: 'Kusala Backend API',
             version: '1.0.0',
-            description: 'API documentation for the Aura Vida wellness platform backend.',
+            description: 'API documentation for the Kusala wellness platform backend.',
         },
         servers: [
             {

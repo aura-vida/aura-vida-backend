@@ -94,6 +94,61 @@ export const deactivatePractitioner = async (id) => {
     return data;
 };
 
+/**
+ * PRAC-008: Activate/deactivate a practitioner by ID (PATCH /api/admin/practitioners/:id/status)
+ */
+export const updatePractitionerStatus = async (id, isActive) => {
+    const { data, error } = await supabase
+        .from('practitioners')
+        .update({ is_published: isActive, bookable: isActive, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .select()
+        .maybeSingle();
+
+    if (error) throw error;
+    if (!data) throw Object.assign(new Error('Practitioner not found'), { statusCode: 404 });
+    return data;
+};
+
+/**
+ * PRAC-009: Assign services to practitioner (PATCH /api/admin/practitioners/:id/services)
+ */
+export const assignPractitionerServices = async (id, serviceIds = []) => {
+    // 1. Ensure practitioner exists
+    const { data: prac, error: pracErr } = await supabase
+        .from('practitioners')
+        .select('id')
+        .eq('id', id)
+        .maybeSingle();
+
+    if (pracErr) throw pracErr;
+    if (!prac) throw Object.assign(new Error('Practitioner not found'), { statusCode: 404 });
+
+    // 2. Delete all existing mappings
+    const { error: deleteErr } = await supabase
+        .from('practitioner_services')
+        .delete()
+        .eq('practitioner_id', id);
+
+    if (deleteErr) throw deleteErr;
+
+    // 3. Insert new ones
+    if (serviceIds.length > 0) {
+        const rows = serviceIds.map(serviceId => ({
+            practitioner_id: id,
+            service_id: serviceId
+        }));
+
+        const { error: insertErr } = await supabase
+            .from('practitioner_services')
+            .insert(rows);
+
+        if (insertErr) throw insertErr;
+    }
+
+    return { practitioner_id: id, services: serviceIds };
+};
+
 // ─── Practitioner Self-Service ────────────────────────────────────────────────
 
 /**
@@ -115,7 +170,7 @@ export const getOwnPractitionerProfile = async (practitionerSlug) => {
  * Practitioners cannot change their slug, sort_order, is_published, or bookable status.
  */
 export const updateOwnPractitionerProfile = async (practitionerSlug, fields) => {
-    const allowedFields = ['name', 'bio', 'city', 'craft', 'price_inr', 'image_url', 'calendly_link'];
+    const allowedFields = ['name', 'bio', 'city', 'craft', 'price_inr', 'image_url', 'calendly_link', 'base_lat', 'base_lng', 'base_address', 'pincode'];
     const sanitized = {};
     for (const key of allowedFields) {
         if (fields[key] !== undefined) sanitized[key] = fields[key];

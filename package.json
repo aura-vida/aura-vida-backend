@@ -1,5 +1,5 @@
 {
-  "name": "aura-vida-backend",
+  "name": "Kusala-backend",
   "version": "1.0.0",
   "main": "index.js",
   "type": "module",
@@ -15,9 +15,12 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
     "cors": "^2.8.6",
+    "crypto": "^1.0.1",
     "dotenv": "^18.0.0",
     "express": "^5.2.1",
     "multer": "^2.4.0",
+    "node-fetch": "^3.3.2",
+    "razorpay": "^2.9.8",
     "swagger-jsdoc": "^6.3.0",
     "swagger-ui-express": "^5.0.1"
   },

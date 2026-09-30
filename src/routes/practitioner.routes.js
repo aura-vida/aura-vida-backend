@@ -7,6 +7,8 @@ import {
     adminDeletePractitioner,
     getMyPractitionerProfile,
     updateMyPractitionerProfile,
+    adminUpdatePractitionerStatus,
+    adminAssignServices,
 } from '../controllers/practitioner.controller.js';
 import { requireAuth, requireRole } from '../middleware/auth.middleware.js';
 
@@ -224,5 +226,63 @@ router.patch('/admin/practitioners/:id', requireAuth, requireRole('admin'), admi
  *         description: Forbidden.
  */
 router.delete('/admin/practitioners/:id', requireAuth, requireRole('admin'), adminDeletePractitioner);
+
+/**
+ * @swagger
+ * /api/admin/practitioners/{id}/status:
+ *   patch:
+ *     summary: Activate/Deactivate a practitioner (PRAC-008)
+ *     tags: [Practitioners, Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [status]
+ *             properties:
+ *               status: { type: boolean, description: "True = active/bookable, False = inactive" }
+ *     responses:
+ *       200:
+ *         description: Practitioner status updated
+ */
+router.patch('/admin/practitioners/:id/status', requireAuth, requireRole('admin'), adminUpdatePractitionerStatus);
+
+/**
+ * @swagger
+ * /api/admin/practitioners/{id}/services:
+ *   patch:
+ *     summary: Assign services to a practitioner (PRAC-009)
+ *     tags: [Practitioners, Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [serviceIds]
+ *             properties:
+ *               serviceIds: 
+ *                 type: array
+ *                 items: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Services assigned successfully
+ */
+router.patch('/admin/practitioners/:id/services', requireAuth, requireRole('admin'), adminAssignServices);
 
 export default router;

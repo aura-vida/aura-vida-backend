@@ -6,6 +6,10 @@ import {
     blockSlot,
     unblockSlot,
     getAvailableSlots,
+    getOwnTimeOff,
+    createOwnTimeOff,
+    adminGetTimeOff,
+    adminCreateTimeOff,
 } from '../controllers/availability.controller.js';
 import { requireAuth, requireRole } from '../middleware/auth.middleware.js';
 
@@ -211,5 +215,97 @@ router.post('/practitioners/:slug/availability/exceptions', requireAuth, require
  *         description: Exception removed.
  */
 router.delete('/practitioners/:slug/availability/exceptions/:exceptionId', requireAuth, requireRole('practitioner', 'admin'), unblockSlot);
+
+// ─── Time-off APIs (AV-007, 008, 009, 010) ───────────────────────────────────
+
+/**
+ * @swagger
+ * /api/practitioners/time-off:
+ *   get:
+ *     summary: List own time-off (AV-007)
+ *     tags: [Availability]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of time-offs for the authenticated practitioner
+ */
+router.get('/practitioners/time-off', requireAuth, requireRole('practitioner'), getOwnTimeOff);
+
+/**
+ * @swagger
+ * /api/practitioners/time-off:
+ *   post:
+ *     summary: Create own time-off (AV-008)
+ *     tags: [Availability]
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [date, start_time, end_time]
+ *             properties:
+ *               date: { type: string, format: date }
+ *               start_time: { type: string }
+ *               end_time: { type: string }
+ *               reason: { type: string }
+ *     responses:
+ *       201:
+ *         description: Time off created
+ */
+router.post('/practitioners/time-off', requireAuth, requireRole('practitioner'), createOwnTimeOff);
+
+/**
+ * @swagger
+ * /api/admin/practitioners/{id}/time-off:
+ *   get:
+ *     summary: Admin - view practitioner leave (AV-009)
+ *     tags: [Availability, Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: List of time-offs for the practitioner
+ */
+router.get('/admin/practitioners/:id/time-off', requireAuth, requireRole('admin'), adminGetTimeOff);
+
+/**
+ * @swagger
+ * /api/admin/practitioners/{id}/time-off:
+ *   post:
+ *     summary: Admin - create practitioner leave (AV-010)
+ *     tags: [Availability, Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [date, start_time, end_time]
+ *             properties:
+ *               date: { type: string, format: date }
+ *               start_time: { type: string }
+ *               end_time: { type: string }
+ *               reason: { type: string }
+ *     responses:
+ *       201:
+ *         description: Time off created
+ */
+router.post('/admin/practitioners/:id/time-off', requireAuth, requireRole('admin'), adminCreateTimeOff);
 
 export default router;

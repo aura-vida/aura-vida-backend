@@ -6,6 +6,8 @@ import {
     deactivatePractitioner,
     getOwnPractitionerProfile,
     updateOwnPractitionerProfile,
+    updatePractitionerStatus,
+    assignPractitionerServices,
 } from '../models/practitioner.model.js';
 import { supabase } from '../config/supabase.js';
 
@@ -76,6 +78,40 @@ export const adminDeletePractitioner = async (req, res) => {
     } catch (error) {
         console.error('adminDeletePractitioner error:', error);
         res.status(500).json({ error: 'Failed to deactivate practitioner' });
+    }
+};
+
+/**
+ * PRAC-008: PATCH /api/admin/practitioners/:id/status
+ */
+export const adminUpdatePractitionerStatus = async (req, res) => {
+    try {
+        const { status } = req.body;
+        if (typeof status !== 'boolean') {
+            return res.status(400).json({ error: 'Body must contain a boolean "status" field' });
+        }
+        const data = await updatePractitionerStatus(req.params.id, status);
+        res.status(200).json({ message: 'Practitioner status updated successfully', practitioner: data });
+    } catch (error) {
+        console.error('adminUpdatePractitionerStatus error:', error);
+        res.status(error.statusCode || 500).json({ error: error.message || 'Failed to update status' });
+    }
+};
+
+/**
+ * PRAC-009: PATCH /api/admin/practitioners/:id/services
+ */
+export const adminAssignServices = async (req, res) => {
+    try {
+        const { serviceIds } = req.body;
+        if (!Array.isArray(serviceIds)) {
+            return res.status(400).json({ error: 'Body must contain an array "serviceIds"' });
+        }
+        const result = await assignPractitionerServices(req.params.id, serviceIds);
+        res.status(200).json({ message: 'Services assigned successfully', ...result });
+    } catch (error) {
+        console.error('adminAssignServices error:', error);
+        res.status(error.statusCode || 500).json({ error: error.message || 'Failed to assign services' });
     }
 };
 

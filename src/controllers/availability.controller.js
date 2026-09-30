@@ -4,6 +4,8 @@ import {
     addException,
     removeException,
     calculateAvailableSlots,
+    getExceptions,
+    getPractitionerSlugById,
 } from '../models/availability.model.js';
 import { supabase } from '../config/supabase.js';
 
@@ -92,6 +94,66 @@ export const unblockSlot = async (req, res) => {
     } catch (err) {
         console.error('unblockSlot error:', err);
         res.status(500).json({ error: 'Failed to unblock slot' });
+    }
+};
+
+// ─── AV-007: List Own Time Off ───────────────────────────────────────────────
+export const getOwnTimeOff = async (req, res) => {
+    try {
+        const slug = await getPractitionerSlug(req.user.id);
+        const exceptions = await getExceptions(slug);
+        res.status(200).json({ timeOff: exceptions });
+    } catch (err) {
+        console.error('getOwnTimeOff error:', err);
+        const status = err.statusCode || 500;
+        res.status(status).json({ error: err.message || 'Failed to get time off' });
+    }
+};
+
+// ─── AV-008: Create Own Time Off ─────────────────────────────────────────────
+export const createOwnTimeOff = async (req, res) => {
+    try {
+        const slug = await getPractitionerSlug(req.user.id);
+        const { date, start_time, end_time, reason } = req.body;
+        if (!date || !start_time || !end_time) {
+            return res.status(400).json({ error: 'date, start_time, and end_time are required.' });
+        }
+        const exception = await addException(slug, date, start_time, end_time, reason);
+        res.status(201).json({ message: 'Time off created', timeOff: exception });
+    } catch (err) {
+        console.error('createOwnTimeOff error:', err);
+        const status = err.statusCode || 500;
+        res.status(status).json({ error: err.message || 'Failed to create time off' });
+    }
+};
+
+// ─── AV-009: Admin List Time Off ─────────────────────────────────────────────
+export const adminGetTimeOff = async (req, res) => {
+    try {
+        const slug = await getPractitionerSlugById(req.params.id);
+        const exceptions = await getExceptions(slug);
+        res.status(200).json({ timeOff: exceptions });
+    } catch (err) {
+        console.error('adminGetTimeOff error:', err);
+        const status = err.statusCode || 500;
+        res.status(status).json({ error: err.message || 'Failed to get time off' });
+    }
+};
+
+// ─── AV-010: Admin Create Time Off ───────────────────────────────────────────
+export const adminCreateTimeOff = async (req, res) => {
+    try {
+        const slug = await getPractitionerSlugById(req.params.id);
+        const { date, start_time, end_time, reason } = req.body;
+        if (!date || !start_time || !end_time) {
+            return res.status(400).json({ error: 'date, start_time, and end_time are required.' });
+        }
+        const exception = await addException(slug, date, start_time, end_time, reason);
+        res.status(201).json({ message: 'Time off created', timeOff: exception });
+    } catch (err) {
+        console.error('adminCreateTimeOff error:', err);
+        const status = err.statusCode || 500;
+        res.status(status).json({ error: err.message || 'Failed to create time off' });
     }
 };
 
