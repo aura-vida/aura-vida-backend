@@ -9,6 +9,8 @@ import {
     updateMyPractitionerProfile,
     adminUpdatePractitionerStatus,
     adminAssignServices,
+    adminGetAllPractitioners,
+    adminGetPractitionerById,
 } from '../controllers/practitioner.controller.js';
 import { requireAuth, requireRole } from '../middleware/auth.middleware.js';
 
@@ -143,6 +145,71 @@ router.patch('/practitioners/me', requireAuth, requireRole('practitioner'), upda
 router.get('/practitioners/:slug', getPractitionerProfile);
 
 // ─── Admin routes ─────────────────────────────────────────────────────────────
+
+/**
+ * @swagger
+ * /api/admin/practitioners:
+ *   get:
+ *     summary: Admin - List all practitioners
+ *     description: Returns all practitioners (published or not). Supports pagination, search, and filters.
+ *     tags: [Practitioners, Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: search
+ *         schema: { type: string }
+ *         description: Search by practitioner name
+ *       - in: query
+ *         name: is_published
+ *         schema: { type: boolean }
+ *       - in: query
+ *         name: bookable
+ *         schema: { type: boolean }
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, default: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 10 }
+ *     responses:
+ *       200:
+ *         description: Paginated list of practitioners.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 practitioners:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                 pagination:
+ *                   $ref: '#/components/schemas/Pagination'
+ */
+router.get('/admin/practitioners', requireAuth, requireRole('admin'), adminGetAllPractitioners);
+
+/**
+ * @swagger
+ * /api/admin/practitioners/{id}:
+ *   get:
+ *     summary: Admin - Get Practitioner by ID
+ *     description: Admin retrieve a specific practitioner by UUID instead of slug.
+ *     tags: [Practitioners, Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Practitioner profile.
+ *       404:
+ *         description: Practitioner not found.
+ */
+router.get('/admin/practitioners/:id', requireAuth, requireRole('admin'), adminGetPractitionerById);
 
 /**
  * @swagger

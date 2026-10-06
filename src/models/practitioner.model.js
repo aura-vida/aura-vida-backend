@@ -45,6 +45,46 @@ export const getPractitionerBySlug = async (slug) => {
 // ─── Admin ────────────────────────────────────────────────────────────────────
 
 /**
+ * Admin: List all practitioners (published or not)
+ */
+export const adminListPractitioners = async (filters = {}) => {
+    const page = Math.max(1, parseInt(filters.page) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(filters.limit) || 10));
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    let query = supabase
+        .from('practitioners')
+        .select('*', { count: 'exact' })
+        .order('sort_order', { ascending: true });
+
+    if (filters.craft) query = query.eq('craft', filters.craft);
+    if (filters.city) query = query.eq('city', filters.city);
+    if (filters.bookable !== undefined) query = query.eq('bookable', filters.bookable === 'true');
+    if (filters.is_published !== undefined) query = query.eq('is_published', filters.is_published === 'true');
+    if (filters.search) query = query.ilike('name', `%${filters.search}%`);
+
+    query = query.range(from, to);
+
+    const { data, error, count } = await query;
+    if (error) throw error;
+    return { data, pagination: { page, limit, total: count, totalPages: Math.ceil(count / limit) } };
+};
+
+/**
+ * Admin: Get practitioner by ID
+ */
+export const getPractitionerById = async (id) => {
+    const { data, error } = await supabase
+        .from('practitioners')
+        .select('*')
+        .eq('id', id)
+        .single();
+    if (error) throw error;
+    return data;
+};
+
+/**
  * PRAC-003: Create a new practitioner (admin only)
  */
 export const createPractitioner = async (fields) => {

@@ -8,6 +8,8 @@ import {
     updateOwnPractitionerProfile,
     updatePractitionerStatus,
     assignPractitionerServices,
+    adminListPractitioners,
+    getPractitionerById,
 } from '../models/practitioner.model.js';
 import { supabase } from '../config/supabase.js';
 
@@ -41,6 +43,33 @@ export const getPractitionerProfile = async (req, res) => {
 };
 
 // ─── Admin ────────────────────────────────────────────────────────────────────
+
+/**
+ * Admin: GET /api/admin/practitioners
+ */
+export const adminGetAllPractitioners = async (req, res) => {
+    try {
+        const { data, pagination } = await adminListPractitioners(req.query);
+        res.status(200).json({ practitioners: data, pagination });
+    } catch (error) {
+        console.error('adminGetAllPractitioners error:', error);
+        res.status(500).json({ error: 'Failed to fetch practitioners' });
+    }
+};
+
+/**
+ * Admin: GET /api/admin/practitioners/:id
+ */
+export const adminGetPractitionerById = async (req, res) => {
+    try {
+        const data = await getPractitionerById(req.params.id);
+        if (!data) return res.status(404).json({ error: 'Practitioner not found' });
+        res.status(200).json({ practitioner: data });
+    } catch (error) {
+        console.error('adminGetPractitionerById error:', error);
+        res.status(404).json({ error: 'Practitioner not found' });
+    }
+};
 
 /**
  * PRAC-003: POST /api/admin/practitioners
