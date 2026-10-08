@@ -128,7 +128,7 @@ export const markOrderPaidAndConfirmBooking = async (orderId, paymentId) => {
         // Fetch booking to see if it needs an online link
         const { data: booking } = await supabase
             .from('bookings')
-            .select('mode, scheduled_at, meeting_location, practitioner_slug')
+            .select('mode, scheduled_at, meeting_location, practitioner_slug, attendees, group_size')
             .eq('id', order.booking_id)
             .maybeSingle();
 
@@ -205,6 +205,95 @@ export const markOrderPaidAndConfirmBooking = async (orderId, paymentId) => {
                 }
             } catch (notifErr) {
                 console.error('❌ [PAYMENT MODEL] Failed to send push notifications:', notifErr.message);
+            }
+
+            // 6. SEND CONFIRMATION EMAILS TO ALL ATTENDEES (group circle support)
+            try {
+                const { sendEmail } = await import('../services/email.service.js');
+                const isOnline = booking?.mode === 'online';
+                const meetLink = updatedLocation?.meet_link;
+
+                // Build the list of recipients from the attendees stored on the booking.
+                // Normalize: attendees can be { name, email } objects (new) or plain strings (old).
+                const rawAttendees = Array.isArray(booking?.attendees) ? booking.attendees : [];
+                const normalizedAttendees = rawAttendees.map(a => {
+                    if (typeof a === 'string') {
+                        // attendees column is text[] — objects get stored as JSON strings like '{"name":"...","email":"..."}'
+                        if (a.trim().startsWith('{')) {
+                            try {
+                                const parsed = JSON.parse(a);
+                                return { name: parsed.name || '', email: parsed.email || null };
+                            } catch (_) { }
+                        }
+                        // Plain string: only use as email if it looks like one
+                        return { name: a, email: a.includes('@') && !a.includes('{') ? a.trim() : null };
+                    }
+                    if (a && typeof a === 'object') return { name: a.name || '', email: a.email || null };
+                    return null;
+                }).filter(a => a && a.email);
+
+                console.log(`[EMAIL DEBUG] Raw attendees from DB:`, JSON.stringify(rawAttendees));
+                console.log(`[EMAIL DEBUG] Normalized attendees with emails:`, JSON.stringify(normalizedAttendees));
+
+                // Primary customer email from order (the person who paid)
+                const primaryEmail = order.customer_email;
+                const primaryName = order.customer_name || 'Guest';
+
+                // Union: primary customer first, then all OTHER attendees (dedup by email)
+                const seenEmails = new Set(primaryEmail ? [primaryEmail.toLowerCase()] : []);
+                const allRecipients = [
+                    ...(primaryEmail ? [{ name: primaryName, email: primaryEmail }] : []),
+                    ...normalizedAttendees.filter(a => {
+                        const lc = a.email.toLowerCase();
+                        if (seenEmails.has(lc)) return false;
+                        seenEmails.add(lc);
+                        return true;
+                    }),
+                ];
+
+                const scheduledDate = booking?.scheduled_at
+                    ? new Date(booking.scheduled_at).toLocaleString('en-IN', {
+                        timeZone: 'Asia/Kolkata',
+                        dateStyle: 'full',
+                        timeStyle: 'short',
+                    })
+                    : 'As scheduled';
+
+                const meetSection = isOnline && meetLink
+                    ? `
+                      <div style="margin: 24px 0; text-align: center;">
+                        <a href="${meetLink}" style="display:inline-block;background:#1a5c38;color:#fff;padding:14px 32px;border-radius:9999px;font-weight:600;font-size:15px;text-decoration:none;">🎥 Join Your Session</a>
+                        <p style="margin-top:12px;font-size:12px;color:#888;">${meetLink}</p>
+                      </div>`
+                    : `<p style="color:#555;">Your practitioner will share the session location details separately.</p>`;
+
+                const emailPromises = allRecipients.map(({ name, email }) =>
+                    sendEmail({
+                        to: email,
+                        subject: `Your Aura Vida Session is Confirmed ✨`,
+                        html: `
+                          <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:32px;border-radius:16px;border:1px solid #e5e7eb;">
+                            <h1 style="font-size:24px;color:#1a5c38;margin-bottom:4px;">Session Confirmed!</h1>
+                            <p style="color:#555;margin-top:0;">Hi ${name || 'there'} 👋, your booking has been confirmed and payment received.</p>
+                            <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0;">
+                            <table style="width:100%;font-size:14px;color:#333;">
+                              <tr><td style="padding:8px 0;color:#888;">Service</td><td style="padding:8px 0;font-weight:600;">${order.item_name || 'Aura Vida Session'}</td></tr>
+                              <tr><td style="padding:8px 0;color:#888;">Date &amp; Time</td><td style="padding:8px 0;font-weight:600;">${scheduledDate} IST</td></tr>
+                              <tr><td style="padding:8px 0;color:#888;">Mode</td><td style="padding:8px 0;font-weight:600;">${booking?.mode || 'session'}</td></tr>
+                              ${booking?.group_size > 1 ? `<tr><td style="padding:8px 0;color:#888;">Group size</td><td style="padding:8px 0;font-weight:600;">${booking.group_size} people</td></tr>` : ''}
+                            </table>
+                            ${meetSection}
+                            <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0;">
+                            <p style="font-size:12px;color:#aaa;">Aura Vida &bull; Questions? Reply to this email or visit auravida.com</p>
+                          </div>
+                        `,
+                    })
+                );
+
+                await Promise.allSettled(emailPromises);
+                console.log(`✅ [EMAIL] Sent confirmation emails to ${allRecipients.length} attendee(s).`);
+            } catch (emailErr) {
+                console.error('❌ [PAYMENT MODEL] Failed to send attendee emails:', emailErr.message);
             }
         } else {
             console.error('❌ [PAYMENT MODEL] Booking confirm error:', bookingErr);

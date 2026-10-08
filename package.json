@@ -21,6 +21,7 @@
     "googleapis": "^183.0.0",
     "multer": "^2.4.0",
     "node-fetch": "^3.3.2",
+    "nodemailer": "^10.0.16",
     "razorpay": "^2.9.8",
     "swagger-jsdoc": "^6.3.0",
     "swagger-ui-express": "^5.0.1"

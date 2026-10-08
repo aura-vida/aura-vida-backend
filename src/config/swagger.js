@@ -16,7 +16,7 @@ const options = {
                 description: 'Local Development Server',
             },
             {
-                url: 'https://transport-advances-traditions-difficulties.trycloudflare.com',
+                url: 'https://witch-edges-sir-functions.trycloudflare.com',
                 description: 'Active Cloudflare Tunnel Server',
             },
             {

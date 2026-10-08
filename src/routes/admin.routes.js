@@ -253,6 +253,26 @@ router.patch('/practitioners/:id/status', requireAuth, requireRole('admin'), adm
 
 /**
  * @swagger
+ * /api/admin/practitioners/{id}:
+ *   delete:
+ *     summary: Soft delete a practitioner (set to inactive)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Practitioner deactivated successfully
+ */
+router.delete('/practitioners/:id', requireAuth, requireRole('admin'), adminController.deactivatePractitioner);
+
+/**
+ * @swagger
  * /api/admin/practitioners/{id}/services:
  *   patch:
  *     summary: Update practitioner linked services

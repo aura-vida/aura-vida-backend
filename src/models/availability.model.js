@@ -89,16 +89,16 @@ export const removeException = async (exceptionId) => {
 };
 
 // ─── AV-007 / AV-009: Get time off exceptions ─────────────────────────────────
-export const getExceptions = async (slug) => {
-    const { data, error } = await supabase
-        .from('availability_exceptions')
-        .select('*')
-        .eq('practitioner_slug', slug)
-        .order('exception_date', { ascending: false });
+// export const getExceptions = async (slug) => {
+//     const { data, error } = await supabase
+//         .from('availability_exceptions')
+//         .select('*')
+//         .eq('practitioner_slug', slug)
+//         .order('exception_date', { ascending: false });
 
-    if (error) throw error;
-    return data;
-};
+//     if (error) throw error;
+//     return data;
+// };
 
 export const getPractitionerSlugById = async (id) => {
     const { data, error } = await supabase
@@ -108,6 +108,19 @@ export const getPractitionerSlugById = async (id) => {
         .single();
     if (error || !data) throw Object.assign(new Error('Practitioner not found'), { statusCode: 404 });
     return data.slug;
+};
+
+// ─── AV-007: List all exceptions for a practitioner ──────────────────────────
+export const getExceptions = async (slug) => {
+    const { data, error } = await supabase
+        .from('availability_exceptions')
+        .select('*')
+        .eq('practitioner_slug', slug)
+        .order('exception_date', { ascending: true })
+        .order('start_time', { ascending: true });
+
+    if (error) throw error;
+    return data || [];
 };
 
 // ─── AV-005: Calculate available bookable time slots for a given date ──────────

@@ -1,6 +1,7 @@
 import * as adminModel from '../models/admin.model.js';
 import * as contactModel from '../models/contact.model.js';
 import * as reviewModel from '../models/review.model.js';
+import * as practitionerModel from '../models/practitioner.model.js';
 
 export const dashboard = async (req, res) => {
     try {
@@ -158,5 +159,16 @@ export const moderateReview = async (req, res) => {
     } catch (error) {
         console.error('Admin Moderate Review Error:', error);
         res.status(error.statusCode || 500).json({ error: error.message || 'Error moderating review' });
+    }
+};
+
+// Soft-delete a practitioner (set to inactive/unpublished)
+export const deactivatePractitioner = async (req, res) => {
+    try {
+        const result = await practitionerModel.deactivatePractitioner(req.params.id);
+        res.status(200).json({ message: 'Practitioner deactivated (soft deleted).', practitioner: result });
+    } catch (error) {
+        console.error('Admin Deactivate Practitioner Error:', error);
+        res.status(error.statusCode || 500).json({ error: error.message || 'Error deactivating practitioner' });
     }
 };

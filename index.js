@@ -28,8 +28,7 @@ const allowedOrigins = [
     'http://localhost:3000',
     'http://localhost:5000',   // Swagger UI
     'http://localhost:8080',
-    'https://aerial-workflow-sunshine-drop.trycloudflare.com',
-    'https://transport-advances-traditions-difficulties.trycloudflare.com',
+    'https://witch-edges-sir-functions.trycloudflare.com',
 ];
 
 app.use(cors({
@@ -57,12 +56,12 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
 // ── Routes ──────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
-app.use('/api', practitionerRoutes);
+app.use('/api', appointmentRoutes);
 app.use('/api', availabilityRoutes);
 app.use('/api', serviceRoutes);
-app.use('/api', appointmentRoutes);
 app.use('/api', locationRoutes);
 app.use('/api', paymentRoutes);
+app.use('/api', practitionerRoutes); // Mounted after specific prefixes to prevent /:slug capturing everything
 app.use('/api/admin', adminRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/contact', contactRoutes);

@@ -257,17 +257,66 @@ export const cancelAppointment = async (req, res) => {
             .eq('id', req.params.id)
             .single();
 
-        if (fetchErr || !booking) return res.status(404).json({ error: 'Appointment not found.' });
-
-        // Only the owner or admin can cancel
-        if (booking.client_id !== req.user.id && req.user.role !== 'admin') {
-            return res.status(403).json({ error: 'Forbidden.' });
+        if (fetchErr || !booking) {
+            return res.status(404).json({
+                error: 'Appointment not found.',
+            });
         }
 
+        // ---------------------------------------------------------
+        // Authorization
+        // Client owner OR assigned practitioner OR admin can cancel
+        // ---------------------------------------------------------
+        let isAuthorized = booking.client_id === req.user.id;
+
+        // Admin can cancel any appointment
+        if (req.user.role === 'admin') {
+            isAuthorized = true;
+        }
+
+        // Practitioner can cancel their own assigned appointment
+        if (req.user.role === 'practitioner') {
+            const { data: practitioner, error: practitionerErr } = await supabase
+                .from('profiles')
+                .select('id, practitioner_slug')
+                .eq('id', req.user.id)
+                .maybeSingle();
+
+            if (practitionerErr) {
+                console.error(
+                    '[CANCEL] Failed to fetch practitioner profile:',
+                    practitionerErr
+                );
+
+                return res.status(500).json({
+                    error: 'Failed to verify practitioner authorization.',
+                });
+            }
+
+            if (
+                practitioner?.practitioner_slug &&
+                practitioner.practitioner_slug === booking.practitioner_slug
+            ) {
+                isAuthorized = true;
+            }
+        }
+
+        if (!isAuthorized) {
+            return res.status(403).json({
+                error: 'Forbidden.',
+            });
+        }
+
+        // Cannot cancel already cancelled/completed appointments
         if (['cancelled', 'completed'].includes(booking.status)) {
-            return res.status(400).json({ error: `Cannot cancel a booking that is already '${booking.status}'.` });
+            return res.status(400).json({
+                error: `Cannot cancel a booking that is already '${booking.status}'.`,
+            });
         }
 
+        // ---------------------------------------------------------
+        // Cancel booking
+        // ---------------------------------------------------------
         const { data, error } = await supabase
             .from('bookings')
             .update({ status: 'cancelled' })
@@ -277,20 +326,70 @@ export const cancelAppointment = async (req, res) => {
 
         if (error) throw error;
 
-        // Trigger cancellation notifications (non-blocking)
+        // ---------------------------------------------------------
+        // Auto-refund
+        // ---------------------------------------------------------
+        let refundResult = null;
+
+        try {
+            const { data: paidOrder } = await supabase
+                .from('orders')
+                .select(
+                    'id, razorpay_order_id, razorpay_payment_id, amount, status'
+                )
+                .eq('booking_id', booking.id)
+                .eq('status', 'paid')
+                .maybeSingle();
+
+            if (paidOrder?.razorpay_payment_id) {
+                const { createRefund } = await import(
+                    '../models/payment.model.js'
+                );
+
+                refundResult = await createRefund(
+                    booking.id,
+                    'requested_by_customer'
+                );
+
+                console.log(
+                    `✅ [CANCEL] Refund initiated for booking ${booking.id}`
+                );
+            }
+        } catch (refundErr) {
+            console.error(
+                `❌ [CANCEL] Refund failed for booking ${booking.id}:`,
+                refundErr.message
+            );
+
+            // Cancellation still succeeds if refund fails
+            refundResult = {
+                error: refundErr.message,
+            };
+        }
+
+        // ---------------------------------------------------------
+        // Notifications
+        // ---------------------------------------------------------
         try {
             await createNotification(
                 booking.client_id,
                 'Session Cancelled',
-                `Your appointment with ${booking.practitioner_slug} has been cancelled.`,
+                `Your appointment with ${booking.practitioner_slug} has been cancelled.${
+                    refundResult && !refundResult.error
+                        ? ' A refund has been initiated to your original payment method.'
+                        : ''
+                }`,
                 'booking',
                 booking.id
             );
+
+            // Notify practitioner
             const { data: prac } = await supabase
                 .from('profiles')
                 .select('id')
                 .eq('practitioner_slug', booking.practitioner_slug)
                 .maybeSingle();
+
             if (prac?.id) {
                 await createNotification(
                     prac.id,
@@ -300,18 +399,39 @@ export const cancelAppointment = async (req, res) => {
                     booking.id
                 );
             }
+
+            // Notify admins
             await notifyAdmins(
                 'Session Cancelled',
-                `Booking with ${booking.practitioner_slug} was cancelled.`,
+                `Booking with ${booking.practitioner_slug} was cancelled.${
+                    refundResult && !refundResult.error
+                        ? ' Refund has been initiated.'
+                        : ''
+                }`,
                 'booking',
                 booking.id
             );
-        } catch (_) {}
+        } catch (_) {
+            // Notifications are non-blocking
+        }
 
-        res.status(200).json({ message: 'Appointment cancelled.', appointment: data });
+        // ---------------------------------------------------------
+        // Response
+        // ---------------------------------------------------------
+        res.status(200).json({
+            message:
+                refundResult && !refundResult.error
+                    ? 'Appointment cancelled and refund initiated.'
+                    : 'Appointment cancelled.',
+            appointment: data,
+            refund: refundResult,
+        });
     } catch (err) {
         console.error('cancelAppointment error:', err);
-        res.status(500).json({ error: 'Failed to cancel appointment' });
+
+        res.status(500).json({
+            error: 'Failed to cancel appointment',
+        });
     }
 };
 
@@ -374,7 +494,7 @@ export const rescheduleAppointment = async (req, res) => {
                     booking.id
                 );
             }
-        } catch (_) {}
+        } catch (_) { }
 
         res.status(200).json({ message: 'Appointment rescheduled.', appointment: data });
     } catch (err) {
