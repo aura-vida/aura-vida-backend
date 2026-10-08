@@ -137,7 +137,9 @@ export const calculateAvailableSlots = async (slug, dateStr) => {
         .eq('is_active', true);
 
     if (schedErr) throw schedErr;
-    if (!schedules || schedules.length === 0) return [];
+    const effectiveSchedules = (schedules && schedules.length > 0)
+        ? schedules
+        : [{ start_time: '09:00:00', end_time: '18:00:00', duration_min: 60 }];
 
     // 2. Get all exceptions for that day
     const { data: exceptions } = await supabase
@@ -175,7 +177,7 @@ export const calculateAvailableSlots = async (slug, dateStr) => {
 
     const slots = [];
 
-    for (const schedule of schedules) {
+    for (const schedule of effectiveSchedules) {
         const schedStart = toMinutes(schedule.start_time.slice(0, 5));
         const schedEnd = toMinutes(schedule.end_time.slice(0, 5));
         const duration = schedule.duration_min;

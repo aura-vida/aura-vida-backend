@@ -2,6 +2,8 @@ import express from 'express';
 import {
     submitSpace,
     adminListSpaces,
+    adminCreateSpaceController,
+    adminUpdateSpaceController,
     adminUpdateSpaceStatus,
     adminDeleteSpace,
 } from '../controllers/space.controller.js';
@@ -97,6 +99,47 @@ router.get('/spaces', getPublicSpaces);
  *         description: Paginated list of spaces
  */
 router.get('/admin/spaces', requireAuth, requireRole('admin'), adminListSpaces);
+
+/**
+ * @swagger
+ * /api/admin/spaces:
+ *   post:
+ *     summary: Admin - Create a new partner space directly
+ *     tags: [Spaces, Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [space_name, address, city, pin]
+ *     responses:
+ *       201:
+ *         description: Space created
+ */
+router.post('/admin/spaces', requireAuth, requireRole('admin'), adminCreateSpaceController);
+
+/**
+ * @swagger
+ * /api/admin/spaces/{id}:
+ *   put:
+ *     summary: Admin - Update partner space details
+ *     tags: [Spaces, Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Space updated
+ */
+router.put('/admin/spaces/:id', requireAuth, requireRole('admin'), adminUpdateSpaceController);
+router.patch('/admin/spaces/:id', requireAuth, requireRole('admin'), adminUpdateSpaceController);
 
 /**
  * @swagger

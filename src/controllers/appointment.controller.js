@@ -221,7 +221,10 @@ export const updatePractitionerAppointmentStatus = async (req, res) => {
 };
 
 // ─── APT-003: Get Appointment Detail ─────────────────────────────────────────
-export const getAppointmentById = async (req, res) => {
+export const getAppointmentById = async (req, res, next) => {
+    if (req.params.id === 'available-slots') {
+        return next ? next() : res.status(404).json({ error: 'Not found' });
+    }
     try {
         const { data, error } = await supabase
             .from('bookings')

@@ -44,12 +44,53 @@ export const listSpaces = async (filters = {}) => {
 
     if (filters.status) query = query.eq('status', filters.status);
     if (filters.city) query = query.ilike('city', `%${filters.city}%`);
+    if (filters.search) {
+        query = query.or(`space_name.ilike.%${filters.search}%,contact_name.ilike.%${filters.search}%,city.ilike.%${filters.search}%,pin.ilike.%${filters.search}%`);
+    }
 
     query = query.range(from, to);
 
     const { data, error, count } = await query;
     if (error) throw error;
     return { data, pagination: { page, limit, total: count, totalPages: Math.ceil(count / limit) } };
+};
+
+/**
+ * Admin: Create a new partner space directly
+ */
+export const adminCreateSpace = async (fields) => {
+    const { data, error } = await supabase
+        .from('partner_spaces')
+        .insert([{
+            ...fields,
+            status: fields.status || 'approved',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+        }])
+        .select()
+        .single();
+
+    if (error) throw error;
+    return data;
+};
+
+/**
+ * Admin: Update all details of a partner space
+ */
+export const adminUpdateSpace = async (id, fields) => {
+    const { data, error } = await supabase
+        .from('partner_spaces')
+        .update({
+            ...fields,
+            updated_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .select()
+        .maybeSingle();
+
+    if (error) throw error;
+    if (!data) throw Object.assign(new Error('Space not found'), { statusCode: 404 });
+    return data;
 };
 
 /**
@@ -83,3 +124,4 @@ export const deleteSpace = async (id) => {
     if (!data) throw Object.assign(new Error('Space submission not found'), { statusCode: 404 });
     return data;
 };
+

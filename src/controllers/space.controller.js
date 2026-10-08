@@ -2,12 +2,89 @@ import {
     createSpace,
     listPublicSpaces,
     listSpaces,
+    adminCreateSpace,
+    adminUpdateSpace,
     updateSpaceStatus,
     deleteSpace,
 } from '../models/space.model.js';
 import { notifyAdmins } from '../models/notification.model.js';
 
 const VALID_STATUSES = ['new', 'contacted', 'approved', 'declined'];
+
+// POST /api/admin/spaces  — admin create
+export const adminCreateSpaceController = async (req, res) => {
+    try {
+        const { contact_name, email, space_name, address, city, pin, capacity, phone, space_type, amenities, availability, notes, status } = req.body;
+        if (!space_name || !address || !city || !pin) {
+            return res.status(400).json({ error: 'space_name, address, city, and pin are required.' });
+        }
+        const data = await adminCreateSpace({
+            contact_name: contact_name || 'Admin Created',
+            email: (email || 'admin@kusala.in').toLowerCase().trim(),
+            space_name,
+            address,
+            city,
+            pin,
+            capacity: parseInt(capacity) || 10,
+            phone: phone || null,
+            space_type: space_type || null,
+            amenities: Array.isArray(amenities) ? amenities : (amenities ? String(amenities).split(',').map(s => s.trim()).filter(Boolean) : []),
+            availability: availability || null,
+            notes: notes || null,
+            status: status || 'approved',
+        });
+        res.status(201).json({ message: 'Space created successfully', space: data });
+    } catch (err) {
+        console.error('adminCreateSpaceController error:', err);
+        res.status(500).json({ error: err.message || 'Failed to create space' });
+    }
+};
+
+// PUT /api/admin/spaces/:id  — admin update full space
+export const adminUpdateSpaceController = async (req, res) => {
+    try {
+        const updateFields = { ...req.body };
+        if (updateFields.email) updateFields.email = updateFields.email.toLowerCase().trim();
+        if (updateFields.capacity) updateFields.capacity = parseInt(updateFields.capacity);
+        if (typeof updateFields.amenities === 'string') {
+            updateFields.amenities = updateFields.amenities.split(',').map(s => s.trim()).filter(Boolean);
+        }
+        delete updateFields.id;
+        delete updateFields.created_at;
+
+        const data = await adminUpdateSpace(req.params.id, updateFields);
+        res.status(200).json({ message: 'Space updated successfully', space: data });
+    } catch (err) {
+        console.error('adminUpdateSpaceController error:', err);
+        res.status(err.statusCode || 500).json({ error: err.message || 'Failed to update space' });
+    }
+};
+
+// PATCH /api/admin/spaces/:id/status  — admin only
+export const adminUpdateSpaceStatus = async (req, res) => {
+    try {
+        const { status } = req.body;
+        if (!status || !VALID_STATUSES.includes(status)) {
+            return res.status(400).json({ error: `status must be one of: ${VALID_STATUSES.join(', ')}` });
+        }
+        const data = await updateSpaceStatus(req.params.id, status);
+        res.status(200).json({ message: 'Space status updated', space: data });
+    } catch (err) {
+        console.error('adminUpdateSpaceStatus error:', err);
+        res.status(err.statusCode || 500).json({ error: err.message || 'Failed to update status' });
+    }
+};
+
+// DELETE /api/admin/spaces/:id  — admin only
+export const adminDeleteSpace = async (req, res) => {
+    try {
+        await deleteSpace(req.params.id);
+        res.status(200).json({ message: 'Space submission deleted successfully' });
+    } catch (err) {
+        console.error('adminDeleteSpace error:', err);
+        res.status(err.statusCode || 500).json({ error: err.message || 'Failed to delete space' });
+    }
+};
 
 // POST /api/spaces  — public
 export const submitSpace = async (req, res) => {
@@ -74,31 +151,5 @@ export const adminListSpaces = async (req, res) => {
     } catch (err) {
         console.error('adminListSpaces error:', err);
         res.status(500).json({ error: 'Failed to fetch spaces' });
-    }
-};
-
-// PATCH /api/admin/spaces/:id/status  — admin only
-export const adminUpdateSpaceStatus = async (req, res) => {
-    try {
-        const { status } = req.body;
-        if (!status || !VALID_STATUSES.includes(status)) {
-            return res.status(400).json({ error: `status must be one of: ${VALID_STATUSES.join(', ')}` });
-        }
-        const data = await updateSpaceStatus(req.params.id, status);
-        res.status(200).json({ message: 'Space status updated', space: data });
-    } catch (err) {
-        console.error('adminUpdateSpaceStatus error:', err);
-        res.status(err.statusCode || 500).json({ error: err.message || 'Failed to update status' });
-    }
-};
-
-// DELETE /api/admin/spaces/:id  — admin only
-export const adminDeleteSpace = async (req, res) => {
-    try {
-        await deleteSpace(req.params.id);
-        res.status(200).json({ message: 'Space submission deleted successfully' });
-    } catch (err) {
-        console.error('adminDeleteSpace error:', err);
-        res.status(err.statusCode || 500).json({ error: err.message || 'Failed to delete space' });
     }
 };

@@ -56,8 +56,8 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
 // ── Routes ──────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
-app.use('/api', appointmentRoutes);
 app.use('/api', availabilityRoutes);
+app.use('/api', appointmentRoutes);
 app.use('/api', serviceRoutes);
 app.use('/api', locationRoutes);
 app.use('/api', paymentRoutes);
