@@ -27,6 +27,20 @@ router.get('/blogs', blogController.listBlogs);
 
 /**
  * @swagger
+ * /api/content/blogs/my:
+ *   get:
+ *     summary: List practitioner's own blogs including drafts
+ *     tags: [Content]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of own blogs
+ */
+router.get('/blogs/my', requireAuth, blogController.listMyBlogs);
+
+/**
+ * @swagger
  * /api/content/blogs/{slug}:
  *   get:
  *     summary: Get a single published blog by slug (CONTENT-002)
@@ -84,7 +98,7 @@ router.get('/blogs/:slug', blogController.getBlogBySlug);
  *       201:
  *         description: Blog created
  */
-router.post('/blogs', requireAuth, requireRole('admin'), blogController.createBlog);
+router.post('/blogs', requireAuth, requireRole('admin', 'practitioner'), blogController.createBlog);
 
 /**
  * @swagger
@@ -120,6 +134,8 @@ router.post('/blogs', requireAuth, requireRole('admin'), blogController.createBl
  *       200:
  *         description: Blog updated
  */
-router.patch('/blogs/:id', requireAuth, requireRole('admin'), blogController.updateBlog);
+router.patch('/blogs/:id', requireAuth, requireRole('admin', 'practitioner'), blogController.updateBlog);
+
+router.delete('/blogs/:id', requireAuth, requireRole('admin', 'practitioner'), blogController.deleteBlog);
 
 export default router;

@@ -4,11 +4,29 @@ export const listBlogs = async (req, res) => {
     try {
         const page = Math.max(1, parseInt(req.query.page) || 1);
         const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 10));
-        const result = await blogModel.listBlogs(page, limit);
+        const author_id = req.query.author_id || null;
+        const category = req.query.category || null;
+        const practitioner_slug = req.query.practitioner_slug || null;
+        const result = await blogModel.listBlogs(page, limit, { author_id, category, practitioner_slug });
         res.status(200).json(result);
     } catch (error) {
         console.error('listBlogs error:', error);
         res.status(500).json({ error: error.message || 'Failed to list blogs' });
+    }
+};
+
+export const listMyBlogs = async (req, res) => {
+    try {
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+        const result = await blogModel.listBlogs(page, limit, {
+            author_id: req.user.id,
+            allStatus: true,
+        });
+        res.status(200).json(result);
+    } catch (error) {
+        console.error('listMyBlogs error:', error);
+        res.status(500).json({ error: error.message || 'Failed to list practitioner blogs' });
     }
 };
 
@@ -47,5 +65,15 @@ export const updateBlog = async (req, res) => {
     } catch (error) {
         console.error('updateBlog error:', error);
         res.status(error.statusCode || 500).json({ error: error.message || 'Failed to update blog' });
+    }
+};
+
+export const deleteBlog = async (req, res) => {
+    try {
+        const data = await blogModel.deleteBlog(req.params.id);
+        res.status(200).json({ message: 'Blog deleted successfully', data });
+    } catch (error) {
+        console.error('deleteBlog error:', error);
+        res.status(error.statusCode || 500).json({ error: error.message || 'Failed to delete blog' });
     }
 };
