@@ -10,6 +10,8 @@ import {
     assignPractitionerServices,
     adminListPractitioners,
     getPractitionerById,
+    applyPractitioner,
+    approvePractitioner,
 } from '../models/practitioner.model.js';
 import { supabase } from '../config/supabase.js';
 
@@ -39,6 +41,19 @@ export const getPractitionerProfile = async (req, res) => {
     } catch (error) {
         console.error('getPractitionerProfile error:', error);
         res.status(404).json({ error: 'Practitioner not found' });
+    }
+};
+
+/**
+ * PRAC-APPLY: POST /api/practitioners/apply
+ */
+export const applyToJoinAsPractitioner = async (req, res) => {
+    try {
+        const data = await applyPractitioner(req.body);
+        res.status(201).json({ message: 'Application submitted successfully', practitioner: data });
+    } catch (error) {
+        console.error('applyToJoinAsPractitioner error:', error);
+        res.status(500).json({ error: 'Failed to submit application' });
     }
 };
 
@@ -144,6 +159,19 @@ export const adminAssignServices = async (req, res) => {
     }
 };
 
+/**
+ * PRAC-APPROVE: POST /api/admin/practitioners/:id/approve
+ */
+export const adminApprovePractitioner = async (req, res) => {
+    try {
+        const data = await approvePractitioner(req.params.id);
+        res.status(200).json({ message: 'Practitioner approved and credentials generated', ...data });
+    } catch (error) {
+        console.error('adminApprovePractitioner error:', error);
+        res.status(error.statusCode || 500).json({ error: error.message || 'Failed to approve practitioner' });
+    }
+};
+
 // ─── Practitioner Self-Service ────────────────────────────────────────────────
 
 /**
@@ -180,7 +208,58 @@ export const getMyPractitionerProfile = async (req, res) => {
 export const updateMyPractitionerProfile = async (req, res) => {
     try {
         const slug = await getPractitionerSlug(req.user.id);
-        const data = await updateOwnPractitionerProfile(slug, req.body);
+
+        // Handle multipart fields manually since formData turns everything into strings
+        const updatePayload = { ...req.body };
+
+        if (updatePayload.price_inr) {
+            updatePayload.price_inr = Number(updatePayload.price_inr);
+        }
+        if (updatePayload.rating) {
+            updatePayload.rating = Number(updatePayload.rating);
+        }
+        if (updatePayload.sessions) {
+            updatePayload.sessions = Number(updatePayload.sessions);
+        }
+
+        // Try to parse keywords if it's sent as a JSON string array from FormData
+        if (typeof updatePayload.keywords === 'string') {
+            try {
+                updatePayload.keywords = JSON.parse(updatePayload.keywords);
+            } catch (e) {
+                // if it fails to parse, it could be a comma separated string
+                updatePayload.keywords = updatePayload.keywords.split(',').map(k => k.trim());
+            }
+        }
+
+        if (req.file) {
+            const ext = req.file.originalname.split('.').pop() || 'jpg';
+            const filename = `${req.user.id}/${Date.now()}.${ext}`;
+
+            const { error: uploadError } = await supabase.storage
+                .from('practitioner-photos')
+                .upload(filename, req.file.buffer, {
+                    contentType: req.file.mimetype,
+                    upsert: true,
+                });
+
+            if (uploadError) {
+                return res.status(400).json({ error: `Image upload failed: ${uploadError.message}` });
+            }
+
+            const SIGNED_URL_TTL = 60 * 60 * 24 * 365 * 5; // 5 years
+            const { data: signed, error: signErr } = await supabase.storage
+                .from('practitioner-photos')
+                .createSignedUrl(filename, SIGNED_URL_TTL);
+
+            if (signErr || !signed) {
+                return res.status(500).json({ error: signErr?.message ?? 'Could not create photo link' });
+            }
+
+            updatePayload.image_url = signed.signedUrl;
+        }
+
+        const data = await updateOwnPractitionerProfile(slug, updatePayload);
         res.status(200).json({ message: 'Practitioner profile updated', practitioner: data });
     } catch (error) {
         console.error('updateMyPractitionerProfile error:', error);

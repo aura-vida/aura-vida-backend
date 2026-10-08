@@ -15,6 +15,15 @@ const options = {
                 url: 'http://localhost:5000',
                 description: 'Local Development Server',
             },
+            {
+                url: 'https://aerial-workflow-sunshine-drop.trycloudflare.com',
+                description: 'Ngrok Tunnel Server',
+            },
+        ],
+
+        // Apply BearerAuth globally so Swagger UI sends the token on every request
+        security: [
+            { BearerAuth: [] }
         ],
 
         // ── Swagger Section Order ───────────────────────────────────────

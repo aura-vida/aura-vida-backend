@@ -131,9 +131,13 @@ export const handleWebhook = async (req, res) => {
         console.log(`✅ [WEBHOOK] Valid signature. Event Type: ${eventType}`);
 
         if (eventType === 'payment.captured') {
+            console.log('✅ [WEBHOOK] Found payment.captured event. Attempting database update...');
             const payment = event.payload?.payment?.entity;
             if (payment?.order_id && payment?.id) {
                 await markOrderPaidAndConfirmBooking(payment.order_id, payment.id);
+                console.log(`✅ [WEBHOOK] Successfully recorded payment for order ${payment.order_id}!`);
+            } else {
+                console.log('⚠️ [WEBHOOK] Missing order_id or payment_id in the payload entity.');
             }
         }
 

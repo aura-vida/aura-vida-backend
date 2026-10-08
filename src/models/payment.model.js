@@ -113,6 +113,7 @@ export const markOrderPaidAndConfirmBooking = async (orderId, paymentId) => {
     }
 
     // 3. Mark order as paid
+    console.log(`[PAYMENT MODEL] Marking order ${orderId} as paid with payment ${paymentId}...`);
     const { error: updateErr } = await supabase
         .from('orders')
         .update({ razorpay_payment_id: paymentId, status: 'paid', paid_at: new Date().toISOString() })
@@ -122,13 +123,92 @@ export const markOrderPaidAndConfirmBooking = async (orderId, paymentId) => {
 
     // 4. Auto-confirm the linked booking ← KEY NEW STEP
     if (order.booking_id) {
+        console.log(`[PAYMENT MODEL] Confirming linked booking ${order.booking_id}...`);
+
+        // Fetch booking to see if it needs an online link
+        const { data: booking } = await supabase
+            .from('bookings')
+            .select('mode, scheduled_at, meeting_location, practitioner_slug')
+            .eq('id', order.booking_id)
+            .maybeSingle();
+
+        let updatedLocation = booking?.meeting_location || null;
+
+        if (booking?.mode === 'online') {
+            try {
+                // Dynamically import to avoid top-level issues if the file misses env vars globally
+                const { createMeetEvent } = await import('../services/calendar.service.js');
+                const meetRes = await createMeetEvent({
+                    summary: `Aura Vida Session: ${order.item_name || ''}`,
+                    description: `Booking Reference: ${order.booking_id}`,
+                    startTime: new Date(booking.scheduled_at),
+                    attendeeEmails: [order.customer_email].filter(Boolean)
+                });
+
+                if (meetRes) {
+                    updatedLocation = { ...(booking.meeting_location || {}), meet_link: meetRes.meetLink, event_id: meetRes.eventId };
+                    console.log(`✅ [CALENDAR] Meet link generated: ${meetRes.meetLink}`);
+                }
+            } catch (err) {
+                console.error('[PAYMENT MODEL] Could not generate Meet Link:', err.message);
+            }
+        }
+
         const { error: bookingErr } = await supabase
             .from('bookings')
-            .update({ status: 'confirmed', razorpay_order_id: orderId })
+            .update({ status: 'confirmed', razorpay_order_id: orderId, meeting_location: updatedLocation })
             .eq('id', order.booking_id)
             .eq('status', 'pending'); // only if still pending
 
-        if (bookingErr) console.error('Booking confirm error:', bookingErr);
+        if (!bookingErr) {
+            console.log(`✅ [PAYMENT MODEL] Booking ${order.booking_id} confirmed successfully!`);
+
+            // 5. SEND CONFIRMATION NOTIFICATIONS TO BOTH CUSTOMER AND PRACTITIONER
+            try {
+                const isOnline = booking?.mode === 'online';
+                const meetLink = updatedLocation?.meet_link;
+
+                const clientMsg = isOnline && meetLink
+                    ? `Your online session is confirmed. Join here: ${meetLink}`
+                    : `Your session booking has been confirmed and paid.`;
+
+                const pracMsg = isOnline && meetLink
+                    ? `A customer has booked an online session. Meet link: ${meetLink}`
+                    : `A customer has confirmed and paid for a session booking.`;
+
+                // Notify Customer
+                if (order.details?.user_id) {
+                    await supabase.from('notifications').insert({
+                        user_id: order.details.user_id,
+                        title: 'Booking Confirmed!',
+                        message: clientMsg,
+                        type: 'booking',
+                        reference_id: order.booking_id,
+                    });
+                }
+
+                // Notify Practitioner
+                const { data: prac } = await supabase
+                    .from('profiles')
+                    .select('id')
+                    .eq('practitioner_slug', booking?.practitioner_slug)
+                    .maybeSingle();
+
+                if (prac?.id) {
+                    await supabase.from('notifications').insert({
+                        user_id: prac.id,
+                        title: 'New Confirmed Booking',
+                        message: pracMsg,
+                        type: 'booking',
+                        reference_id: order.booking_id,
+                    });
+                }
+            } catch (notifErr) {
+                console.error('❌ [PAYMENT MODEL] Failed to send push notifications:', notifErr.message);
+            }
+        } else {
+            console.error('❌ [PAYMENT MODEL] Booking confirm error:', bookingErr);
+        }
     }
 
     return { alreadyProcessed: false, order };

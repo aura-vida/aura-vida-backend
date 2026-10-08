@@ -39,9 +39,16 @@ export const createAppointment = async (req, res) => {
                 practitioner_slug,
                 practitioner_name: practitioner.name,
                 item_id: service_id,
-                amount: Math.round((service.price_inr || 0) * 100), // store in paise for Razorpay
+                // Apply same group pricing as frontend: base + 60% extra per additional person
+                amount: (() => {
+                    const baseInr = service.price_inr || 0;
+                    const extraRate = 0.6;
+                    const size = Math.max(1, group_size || 1);
+                    const totalInr = baseInr + Math.round(baseInr * extraRate) * Math.max(0, size - 1);
+                    return Math.round(totalInr * 100); // convert to paise
+                })(),
                 currency: 'INR',
-                mode: 'offline',                 // physical meeting
+                mode: req.body.mode || 'offline',
                 scheduled_at,
                 status: 'pending',
                 group_size: group_size || 1,

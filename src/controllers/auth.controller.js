@@ -73,6 +73,30 @@ export const login = async (req, res) => {
     }
 };
 
+export const refreshToken = async (req, res) => {
+    try {
+        const { refresh_token } = req.body;
+
+        if (!refresh_token) {
+            return res.status(400).json({ error: 'Refresh token is required' });
+        }
+
+        const { data, error } = await supabaseAuth.auth.refreshSession({ refresh_token });
+
+        if (error) {
+            return res.status(400).json({ error: error.message });
+        }
+
+        res.status(200).json({
+            message: 'Token refreshed successfully',
+            session: data.session,
+            user: data.user
+        });
+    } catch (error) {
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+};
+
 export const logout = async (req, res) => {
     try {
         const { error } = await supabaseAuth.auth.signOut();

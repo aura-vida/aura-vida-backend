@@ -210,7 +210,7 @@ export const getOwnPractitionerProfile = async (practitionerSlug) => {
  * Practitioners cannot change their slug, sort_order, is_published, or bookable status.
  */
 export const updateOwnPractitionerProfile = async (practitionerSlug, fields) => {
-    const allowedFields = ['name', 'bio', 'city', 'craft', 'price_inr', 'image_url', 'calendly_link', 'base_lat', 'base_lng', 'base_address', 'pincode'];
+    const allowedFields = ['name', 'bio', 'city', 'craft', 'price_inr', 'image_url', 'calendly_link', 'base_lat', 'base_lng', 'base_address', 'pincode', 'keywords'];
     const sanitized = {};
     for (const key of allowedFields) {
         if (fields[key] !== undefined) sanitized[key] = fields[key];
@@ -225,4 +225,144 @@ export const updateOwnPractitionerProfile = async (practitionerSlug, fields) => 
 
     if (error) throw error;
     return data;
+};
+
+// ─── Public Application ────────────────────────────────────────────────────────
+
+/**
+ * PRAC-APPLY: Submit a practitioner application (public)
+ * Creates a pending practitioner record. No user account yet.
+ */
+export const applyPractitioner = async (fields) => {
+    const {
+        name, email, bio, craft, city, rating, sessions, price_inr
+    } = fields;
+
+    if (!name || !email) {
+        const err = new Error('Name and email are required');
+        err.statusCode = 400;
+        throw err;
+    }
+
+    // Build slug from name
+    const slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now();
+
+    const { data, error } = await supabase
+        .from('practitioners')
+        .insert([{
+            name: name.trim(),
+            slug,
+            bio: bio?.trim() || null,
+            craft: craft?.trim() || null,
+            city: city?.trim() || null,
+            rating: parseFloat(rating) || 5,
+            sessions: parseInt(sessions) || 0,
+            price_inr: parseInt(price_inr) || 0,
+            is_published: false,
+            bookable: false,
+            application_email: email.trim().toLowerCase(),
+            application_status: 'pending',
+        }])
+        .select()
+        .single();
+
+    if (error) throw error;
+    return data;
+};
+
+/**
+ * PRAC-APPROVE: Admin approves a practitioner application.
+ * 1. Creates Supabase auth user via admin API
+ * 2. Sets profile role = 'practitioner' and links practitioner_slug
+ * 3. Marks application_status = 'approved', is_published = true, bookable = true
+ * 4. Sends invite email via Supabase Admin (user gets a magic link to set their password)
+ */
+export const approvePractitioner = async (id) => {
+    // 1. Fetch the pending practitioner
+    const { data: prac, error: fetchErr } = await supabase
+        .from('practitioners')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+
+    if (fetchErr) throw fetchErr;
+    if (!prac) {
+        const err = new Error('Practitioner not found');
+        err.statusCode = 404;
+        throw err;
+    }
+    if (prac.application_status === 'approved') {
+        const err = new Error('Practitioner is already approved');
+        err.statusCode = 400;
+        throw err;
+    }
+    if (!prac.application_email) {
+        const err = new Error('Practitioner has no application email — cannot create account');
+        err.statusCode = 400;
+        throw err;
+    }
+
+    // 2. Create Supabase auth user (this sends the invite / welcome email automatically)
+    const { data: authData, error: authErr } = await supabase.auth.admin.inviteUserByEmail(
+        prac.application_email,
+        {
+            data: { role: 'practitioner', practitioner_slug: prac.slug },
+            redirectTo: `${process.env.SITE_URL || 'http://localhost:8080'}/practitioner`,
+        }
+    );
+
+    if (authErr) {
+        // If user already exists just continue
+        if (!authErr.message?.includes('already been registered')) throw authErr;
+    }
+
+    let authUserId = authData?.user?.id;
+
+    // If user already existed, inviteUserByEmail fails but we can get their ID via generateLink
+    if (!authUserId) {
+        const { data: linkData } = await supabase.auth.admin.generateLink({
+            type: 'magiclink',
+            email: prac.application_email,
+        });
+        authUserId = linkData?.user?.id;
+    }
+
+    // 3. Upsert profile and update user_roles
+    if (authUserId) {
+        const { error: profileErr } = await supabase.from('profiles').upsert({
+            id: authUserId,
+            practitioner_slug: prac.slug,
+            full_name: prac.name,
+            updated_at: new Date().toISOString(),
+        }, { onConflict: 'id' });
+
+        if (profileErr) {
+            console.error('Failed to upsert practitioner profile:', profileErr);
+            throw profileErr;
+        }
+
+        // The authoritative role is in `user_roles`, not profiles
+        const { data: existingRole } = await supabase.from('user_roles').select('*').eq('user_id', authUserId).maybeSingle();
+        if (existingRole) {
+            await supabase.from('user_roles').update({ role: 'practitioner' }).eq('user_id', authUserId);
+        } else {
+            await supabase.from('user_roles').insert([{ user_id: authUserId, role: 'practitioner' }]);
+        }
+    }
+
+    // 4. Mark the practitioner as approved + published
+    const { data: updated, error: updateErr } = await supabase
+        .from('practitioners')
+        .update({
+            application_status: 'approved',
+            is_published: true,
+            bookable: true,
+            updated_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .select()
+        .single();
+
+    if (updateErr) throw updateErr;
+    return { practitioner: updated, email: prac.application_email };
 };

@@ -6,7 +6,8 @@ import {
     sendOtp,
     verifyOtp,
     forgotPassword,
-    resetPassword
+    resetPassword,
+    refreshToken
 } from '../controllers/auth.controller.js';
 import { requireAuth } from '../middleware/auth.middleware.js';
 
@@ -80,6 +81,29 @@ router.post('/register', register);
  *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.post('/login', login);
+
+/**
+ * @swagger
+ * /api/auth/refresh:
+ *   post:
+ *     summary: Refresh the access token using a refresh token
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               refresh_token:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Successfully refreshed token
+ *       400:
+ *         description: Invalid or expired refresh token
+ */
+router.post('/refresh', refreshToken);
 
 /**
  * @swagger

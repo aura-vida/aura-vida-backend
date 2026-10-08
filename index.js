@@ -15,6 +15,8 @@ import notificationRoutes from './src/routes/notification.routes.js';
 import contactRoutes from './src/routes/contact.routes.js';
 import blogRoutes from './src/routes/blog.routes.js';
 import reviewRoutes from './src/routes/review.routes.js';
+import waitlistRoutes from './src/routes/waitlist.routes.js';
+import spaceRoutes from './src/routes/space.routes.js';
 import { swaggerSpec } from './src/config/swagger.js';
 
 dotenv.config();
@@ -22,7 +24,18 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use(cors());
+const allowedOrigins = [
+    'http://localhost:3000',
+    'http://localhost:5000',   // Swagger UI
+    'http://localhost:8080',
+    'https://aerial-workflow-sunshine-drop.trycloudflare.com',
+];
+
+app.use(cors({
+    origin: allowedOrigins,
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization', 'ngrok-skip-browser-warning', 'X-Tunnel-Skip-AntiPhishing-Page'],
+}));
 
 // ── Razorpay Webhook: capture raw body BEFORE express.json() strips it ───────
 // HMAC signature verification needs the exact raw bytes Razorpay sent.
@@ -54,6 +67,8 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/contact', contactRoutes);
 app.use('/api/content', blogRoutes);      // → /api/content/blogs
 app.use('/api/reviews', reviewRoutes);
+app.use('/api', waitlistRoutes);
+app.use('/api', spaceRoutes);
 
 // Test route
 app.get('/', (req, res) => {

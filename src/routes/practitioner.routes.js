@@ -11,8 +11,11 @@ import {
     adminAssignServices,
     adminGetAllPractitioners,
     adminGetPractitionerById,
+    applyToJoinAsPractitioner,
+    adminApprovePractitioner,
 } from '../controllers/practitioner.controller.js';
 import { requireAuth, requireRole } from '../middleware/auth.middleware.js';
+import { upload } from '../middleware/upload.middleware.js';
 
 const router = express.Router();
 
@@ -71,6 +74,12 @@ const router = express.Router();
 router.get('/practitioners', getPractitioners);
 
 /**
+ * PUBLIC: POST /api/practitioners/apply
+ * Submit a practitioner application (no auth required)
+ */
+router.post('/practitioners/apply', applyToJoinAsPractitioner);
+
+/**
  * @swagger
  * /api/practitioners/me:
  *   get:
@@ -121,7 +130,7 @@ router.get('/practitioners/me', requireAuth, requireRole('practitioner'), getMyP
  *       403:
  *         description: Forbidden – Practitioner role required.
  */
-router.patch('/practitioners/me', requireAuth, requireRole('practitioner'), updateMyPractitionerProfile);
+router.patch('/practitioners/me', requireAuth, requireRole('practitioner'), upload.single('image'), updateMyPractitionerProfile);
 
 /**
  * @swagger
@@ -321,6 +330,12 @@ router.delete('/admin/practitioners/:id', requireAuth, requireRole('admin'), adm
  *         description: Practitioner status updated
  */
 router.patch('/admin/practitioners/:id/status', requireAuth, requireRole('admin'), adminUpdatePractitionerStatus);
+
+/**
+ * ADMIN: POST /api/admin/practitioners/:id/approve
+ * Approve a pending practitioner – creates their auth account and sends invite email
+ */
+router.post('/admin/practitioners/:id/approve', requireAuth, requireRole('admin'), adminApprovePractitioner);
 
 /**
  * @swagger
