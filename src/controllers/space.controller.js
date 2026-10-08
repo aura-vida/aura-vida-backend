@@ -5,6 +5,7 @@ import {
     updateSpaceStatus,
     deleteSpace,
 } from '../models/space.model.js';
+import { notifyAdmins } from '../models/notification.model.js';
 
 const VALID_STATUSES = ['new', 'contacted', 'approved', 'declined'];
 
@@ -31,6 +32,16 @@ export const submitSpace = async (req, res) => {
             availability: availability || null,
             notes: notes || null,
         });
+
+        // Notify admins asynchronously (non-blocking)
+        try {
+            await notifyAdmins(
+                'New Space Submission',
+                `${data.space_name} in ${data.city} submitted by ${data.contact_name}.`,
+                'space',
+                data.id
+            );
+        } catch (_) {}
 
         res.status(201).json({ message: 'Space submission received! We will be in touch.', space: data });
     } catch (err) {

@@ -30,11 +30,29 @@ export const getDashboardSummary = async () => {
         totalRevenueInr = totalPaise / 100;
     }
 
+    let totalPractitioners = 0;
+    try {
+        const { count: pCount } = await supabase
+            .from('practitioners')
+            .select('*', { count: 'exact', head: true });
+        totalPractitioners = pCount || 0;
+    } catch (_) {}
+
+    let totalSpaces = 0;
+    try {
+        const { count: sCount } = await supabase
+            .from('space_listings')
+            .select('*', { count: 'exact', head: true });
+        totalSpaces = sCount || 0;
+    } catch (_) {}
+
     return {
         totalUsers: usersCount || 0,
         pendingBookings: pendingCount || 0,
         confirmedBookings: confirmedCount || 0,
-        totalRevenueInr
+        totalRevenueInr,
+        totalPractitioners,
+        totalSpaces,
     };
 };
 
@@ -45,6 +63,9 @@ export const getUsersList = async (filters, page, limit) => {
     let query = supabase.from('profiles').select('*', { count: 'exact' });
     if (filters.search) {
         query = query.ilike('full_name', `%${filters.search}%`);
+    }
+    if (filters.status) {
+        query = query.eq('status', filters.status);
     }
 
     const { data, count, error } = await query.range(from, to).order('id', { ascending: false });
@@ -57,13 +78,27 @@ export const getUsersList = async (filters, page, limit) => {
             .select('user_id, role')
             .in('user_id', userIds);
 
+        const roleMap = {};
         if (!rolesError && roles) {
-            const roleMap = {};
             roles.forEach(r => { roleMap[r.user_id] = r.role; });
-            data.forEach(user => { user.role = roleMap[user.id] || 'client'; });
-        } else {
-            data.forEach(user => { user.role = 'client'; });
         }
+
+        // Fetch auth emails if possible
+        let emailMap = {};
+        try {
+            const { data: authUsers } = await supabase.auth.admin.listUsers();
+            if (authUsers?.users) {
+                authUsers.users.forEach(u => { emailMap[u.id] = u.email; });
+            }
+        } catch (e) {
+            // non-blocking
+        }
+
+        data.forEach(user => {
+            user.role = roleMap[user.id] || 'client';
+            user.email = user.email || emailMap[user.id] || null;
+            user.status = user.status || 'active';
+        });
     }
 
     return { data, pagination: { page, limit, total: count, totalPages: Math.ceil(count / limit) } };

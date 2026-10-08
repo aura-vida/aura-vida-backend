@@ -1,7 +1,7 @@
 import { supabase } from '../config/supabase.js';
 import { getPractitionerBySlug } from '../models/practitioner.model.js';
 import { getServiceById } from '../models/service.model.js';
-import { createNotification } from '../models/notification.model.js';
+import { createNotification, notifyAdmins } from '../models/notification.model.js';
 
 // ─── Helper: fetch profile full_name for client_name denorm ──────────────────
 const getProfileName = async (userId) => {
@@ -88,6 +88,14 @@ export const createAppointment = async (req, res) => {
                     booking.id
                 );
             }
+
+            // Notify admins
+            await notifyAdmins(
+                'New Platform Booking',
+                `New appointment requested with ${practitioner_slug} on ${formattedDate}.`,
+                'booking',
+                booking.id
+            );
         } catch (notifErr) {
             console.error('Failed to trigger notifications during booking:', notifErr);
             // Non-blocking: We don't fail the booking if notification fails
@@ -268,6 +276,38 @@ export const cancelAppointment = async (req, res) => {
             .single();
 
         if (error) throw error;
+
+        // Trigger cancellation notifications (non-blocking)
+        try {
+            await createNotification(
+                booking.client_id,
+                'Session Cancelled',
+                `Your appointment with ${booking.practitioner_slug} has been cancelled.`,
+                'booking',
+                booking.id
+            );
+            const { data: prac } = await supabase
+                .from('profiles')
+                .select('id')
+                .eq('practitioner_slug', booking.practitioner_slug)
+                .maybeSingle();
+            if (prac?.id) {
+                await createNotification(
+                    prac.id,
+                    'Session Cancelled',
+                    `Appointment #${booking.id.slice(0, 8)} was cancelled.`,
+                    'booking',
+                    booking.id
+                );
+            }
+            await notifyAdmins(
+                'Session Cancelled',
+                `Booking with ${booking.practitioner_slug} was cancelled.`,
+                'booking',
+                booking.id
+            );
+        } catch (_) {}
+
         res.status(200).json({ message: 'Appointment cancelled.', appointment: data });
     } catch (err) {
         console.error('cancelAppointment error:', err);
@@ -309,6 +349,33 @@ export const rescheduleAppointment = async (req, res) => {
             .single();
 
         if (error) throw error;
+
+        // Trigger rescheduling notifications (non-blocking)
+        try {
+            const formattedDate = new Date(scheduled_at).toLocaleString();
+            await createNotification(
+                booking.client_id,
+                'Session Rescheduled',
+                `Your appointment has been moved to ${formattedDate}.`,
+                'booking',
+                booking.id
+            );
+            const { data: prac } = await supabase
+                .from('profiles')
+                .select('id')
+                .eq('practitioner_slug', booking.practitioner_slug)
+                .maybeSingle();
+            if (prac?.id) {
+                await createNotification(
+                    prac.id,
+                    'Session Rescheduled by Client',
+                    `Appointment #${booking.id.slice(0, 8)} was rescheduled to ${formattedDate}.`,
+                    'booking',
+                    booking.id
+                );
+            }
+        } catch (_) {}
+
         res.status(200).json({ message: 'Appointment rescheduled.', appointment: data });
     } catch (err) {
         console.error('rescheduleAppointment error:', err);

@@ -29,6 +29,7 @@ const allowedOrigins = [
     'http://localhost:5000',   // Swagger UI
     'http://localhost:8080',
     'https://aerial-workflow-sunshine-drop.trycloudflare.com',
+    'https://transport-advances-traditions-difficulties.trycloudflare.com',
 ];
 
 app.use(cors({

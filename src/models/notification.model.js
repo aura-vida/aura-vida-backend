@@ -46,3 +46,36 @@ export const createNotification = async (userId, title, message, type = 'info', 
     }
     return data;
 };
+
+export const notifyAdmins = async (title, message, type = 'info', referenceId = null) => {
+    try {
+        const { data: adminRoles } = await supabase
+            .from('user_roles')
+            .select('user_id')
+            .in('role', ['admin', 'superadmin']);
+
+        if (!adminRoles || adminRoles.length === 0) return [];
+
+        const inserts = adminRoles.map((r) => ({
+            user_id: r.user_id,
+            title,
+            message,
+            type,
+            reference_id: referenceId,
+        }));
+
+        const { data, error } = await supabase
+            .from('notifications')
+            .insert(inserts)
+            .select();
+
+        if (error) {
+            console.error('Failed to notify admins:', error);
+            return [];
+        }
+        return data;
+    } catch (err) {
+        console.error('Error in notifyAdmins:', err);
+        return [];
+    }
+};

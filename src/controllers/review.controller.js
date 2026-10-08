@@ -1,4 +1,5 @@
 import * as reviewModel from '../models/review.model.js';
+import { createNotification, notifyAdmins } from '../models/notification.model.js';
 
 export const listPractitionerReviews = async (req, res) => {
     try {
@@ -28,6 +29,24 @@ export const createReview = async (req, res) => {
             rating: parseInt(rating),
             comment: comment || null
         });
+
+        // Trigger notifications asynchronously (non-blocking)
+        try {
+            await createNotification(
+                practitioner_id,
+                'New Client Review',
+                `A client left a ${rating}-star review for your session.`,
+                'review',
+                data.id
+            );
+            await notifyAdmins(
+                'New Client Review',
+                `A new ${rating}-star review was submitted and is pending moderation.`,
+                'review',
+                data.id
+            );
+        } catch (_) {}
+
         res.status(201).json({ message: 'Review submitted and pending approval.', data });
     } catch (error) {
         console.error('createReview error:', error);

@@ -14,6 +14,7 @@ import {
     approvePractitioner,
 } from '../models/practitioner.model.js';
 import { supabase } from '../config/supabase.js';
+import { notifyAdmins } from '../models/notification.model.js';
 
 // ─── Public ───────────────────────────────────────────────────────────────────
 
@@ -50,6 +51,17 @@ export const getPractitionerProfile = async (req, res) => {
 export const applyToJoinAsPractitioner = async (req, res) => {
     try {
         const data = await applyPractitioner(req.body);
+
+        // Notify admins asynchronously (non-blocking)
+        try {
+            await notifyAdmins(
+                'New Practitioner Application',
+                `${data.name} applied for ${data.craft || 'Holistic Practitioner'}.`,
+                'practitioner',
+                data.id
+            );
+        } catch (_) {}
+
         res.status(201).json({ message: 'Application submitted successfully', practitioner: data });
     } catch (error) {
         console.error('applyToJoinAsPractitioner error:', error);

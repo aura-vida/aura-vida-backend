@@ -63,6 +63,12 @@ export const login = async (req, res) => {
             console.error('Could not fetch user profile', err);
         }
 
+        if (userProfile && userProfile.status === 'inactive') {
+            return res.status(403).json({
+                error: 'Your account has been deactivated by an administrator. Please contact Kuśala support.'
+            });
+        }
+
         res.status(200).json({
             message: 'Logged in successfully',
             user: { ...authData.user, profile: userProfile },
@@ -148,6 +154,12 @@ export const verifyOtp = async (req, res) => {
             try {
                 userProfile = await getUserProfile(data.user.id);
             } catch (err) { }
+        }
+
+        if (userProfile && userProfile.status === 'inactive') {
+            return res.status(403).json({
+                error: 'Your account has been deactivated by an administrator. Please contact Kuśala support.'
+            });
         }
 
         res.status(200).json({

@@ -25,6 +25,17 @@ export const requireAuth = async (req, res, next) => {
             .eq('user_id', user.id)
             .single();
 
+        // Check profile status
+        const { data: profileData } = await supabase
+            .from('profiles')
+            .select('status')
+            .eq('id', user.id)
+            .maybeSingle();
+
+        if (profileData?.status === 'inactive') {
+            return res.status(403).json({ error: 'Your account has been deactivated. Please contact support.' });
+        }
+
         req.user = { ...user, role: roleData?.role };
         next();
     } catch (error) {
