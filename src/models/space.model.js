@@ -15,17 +15,52 @@ export const createSpace = async (fields) => {
 };
 
 /**
- * Public: List partner spaces by pin code (only approved or contacted spaces)
+ * Public: List partner spaces by pin code
+ * 1. Checks exact PIN code match
+ * 2. If no exact match, checks same region (first 2-3 digits of PIN)
+ * 3. Fallback: returns available partner spaces so the user can choose a sanctuary
  */
 export const listPublicSpaces = async (pin) => {
-    const { data, error } = await supabase
+    if (pin) {
+        // 1. Exact match
+        const { data: exact, error: exactErr } = await supabase
+            .from('partner_spaces')
+            .select('id, space_name, address, city, pin, capacity, space_type, amenities, notes, status')
+            .eq('pin', pin)
+            .in('status', ['approved', 'contacted', 'new']);
+
+        if (!exactErr && exact && exact.length > 0) return exact;
+
+        // 2. Regional prefix match (first 3 digits e.g. 384... or 380...)
+        const prefix3 = pin.slice(0, 3);
+        const { data: regional3 } = await supabase
+            .from('partner_spaces')
+            .select('id, space_name, address, city, pin, capacity, space_type, amenities, notes, status')
+            .ilike('pin', `${prefix3}%`)
+            .in('status', ['approved', 'contacted', 'new']);
+
+        if (regional3 && regional3.length > 0) return regional3;
+
+        // Regional prefix match (first 2 digits e.g. 38... for Gujarat)
+        const prefix2 = pin.slice(0, 2);
+        const { data: regional2 } = await supabase
+            .from('partner_spaces')
+            .select('id, space_name, address, city, pin, capacity, space_type, amenities, notes, status')
+            .ilike('pin', `${prefix2}%`)
+            .in('status', ['approved', 'contacted', 'new']);
+
+        if (regional2 && regional2.length > 0) return regional2;
+    }
+
+    // 3. Fallback: return all active partner spaces
+    const { data: allSpaces, error } = await supabase
         .from('partner_spaces')
-        .select('id, space_name, address, city, pin, capacity, space_type, amenities, notes')
-        .eq('pin', pin)
-        .in('status', ['approved', 'contacted']);
+        .select('id, space_name, address, city, pin, capacity, space_type, amenities, notes, status')
+        .in('status', ['approved', 'contacted', 'new'])
+        .limit(10);
 
     if (error) throw error;
-    return data;
+    return allSpaces || [];
 };
 
 /**
