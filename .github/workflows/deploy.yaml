@@ -1,0 +1,29 @@
+name: Deploy Kusala Backend
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Copy existing .env
+        run: cp /home/ubuntu/aura-vida-backend/.env .env
+
+      - name: Stop and remove existing containers
+        run: docker compose down
+
+      - name: Build and start services
+        run: docker compose up -d --build
+
+      - name: Verify API is running
+        run: |
+          docker compose ps
+          curl -f http://127.0.0.1:5000/ || exit 1
+          echo "Kusala Backend is running"

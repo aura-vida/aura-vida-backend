@@ -30,6 +30,7 @@ const allowedOrigins = [
     'http://localhost:3000',
     'http://localhost:5000',   // Swagger UI
     'http://localhost:8080',
+    'http://3.107.114.205:5000',
     'https://witch-edges-sir-functions.trycloudflare.com',
 ];
 
