@@ -1,41 +1,38 @@
 name: Deploy Kusala Backend
 
-on:
-push:
-branches:
-- main
+'on':
+  push:
+    branches:
+      - main
 
 jobs:
-deploy:
-runs-on: kusala-backend-runner
+  deploy:
+    runs-on: kusala-backend-runner
 
-steps:
-  - name: Checkout Code
-    uses: actions/checkout@v4
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-  - name: Copy existing .env
-    run: cp /home/ubuntu/aura-vida-backend/.env .env
+      - name: Copy existing .env
+        run: cp /home/ubuntu/aura-vida-backend/.env .env
 
-  - name: Stop existing containers
-    run: docker compose down
+      - name: Stop existing containers
+        run: docker compose down
 
-  - name: Build and start services
-    run: docker compose up -d --build
+      - name: Build and start services
+        run: docker compose up -d --build
 
-  - name: Verify API is running
-    run: |
-      docker compose ps
-
-      for i in $(seq 1 12); do
-        if curl --connect-timeout 3 --max-time 10 -fsS http://127.0.0.1:5000/; then
-          echo "Kusala Backend is running successfully"
-          exit 0
-        fi
-
-        echo "API not ready yet. Retry $i of 12..."
-        sleep 5
-      done
-
-      echo "Health check failed. Container logs:"
-      docker compose logs --tail=100 backend
-      exit 1
+      - name: Verify API is running
+        run: |
+          docker compose ps
+          for i in $(seq 1 12); do
+            if curl --connect-timeout 3 --max-time 10 -fsS http://127.0.0.1:5000/; then
+              echo "Kusala Backend is running successfully"
+              exit 0
+            fi
+            echo "API not ready yet. Retry $i of 12..."
+            sleep 5
+          done
+          echo "Health check failed. Container logs:"
+          docker compose logs --tail=100 backend
+          exit 1
