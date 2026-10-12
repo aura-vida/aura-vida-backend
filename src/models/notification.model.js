@@ -52,7 +52,7 @@ export const notifyAdmins = async (title, message, type = 'info', referenceId = 
         const { data: adminRoles } = await supabase
             .from('user_roles')
             .select('user_id')
-            .in('role', ['admin', 'superadmin']);
+            .eq('role', 'admin');
 
         if (!adminRoles || adminRoles.length === 0) return [];
 

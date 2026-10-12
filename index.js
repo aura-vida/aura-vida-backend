@@ -30,11 +30,23 @@ const allowedOrigins = [
     'http://localhost:3000',
     'http://localhost:5000',   // Swagger UI
     'http://localhost:8080',
+    'http://localhost:5173',
     'https://witch-edges-sir-functions.trycloudflare.com',
-];
+    process.env.FRONTEND_URL,
+].filter(Boolean);
 
 app.use(cors({
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps, curl, server-to-server)
+        if (!origin) return callback(null, true);
+        if (
+            allowedOrigins.includes(origin) ||
+            /\.vercel\.app$/.test(origin)
+        ) {
+            return callback(null, true);
+        }
+        return callback(null, false);
+    },
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization', 'ngrok-skip-browser-warning', 'X-Tunnel-Skip-AntiPhishing-Page'],
 }));
