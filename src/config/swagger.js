@@ -10,20 +10,20 @@ const options = {
             version: '1.0.0',
             description: 'API documentation for the Kusala wellness platform backend.',
         },
-        servers: [
-            {
-                url: 'http://localhost:5000',
-                description: 'Local Development Server',
-            },
-            {
-                url: 'https://witch-edges-sir-functions.trycloudflare.com',
-                description: 'Active Cloudflare Tunnel Server',
-            },
-            {
-                url: 'https://aerial-workflow-sunshine-drop.trycloudflare.com',
-                description: 'Previous Tunnel Server',
-            },
-        ],
+//        servers: [
+          //  {
+        //        url: 'http://localhost:5000',
+      //          description: 'Local Development Server',
+    //        },
+  //          {
+             //   url: 'https://witch-edges-sir-functions.trycloudflare.com',
+//                description: 'Active Cloudflare Tunnel Server',
+           // },
+///            {
+//                url: 'https://aerial-workflow-sunshine-drop.trycloudflare.com',
+//                description: 'Previous Tunnel Server',
+//            },
+//        ],
 
         // Apply BearerAuth globally so Swagger UI sends the token on every request
         security: [
