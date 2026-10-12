@@ -7,7 +7,7 @@ on:
 
 jobs:
   deploy:
-    runs-on: self-hosted
+    runs-on: kusala-backend-runner
 
     steps:
       - name: Checkout Code
