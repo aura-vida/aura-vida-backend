@@ -49,11 +49,15 @@ export const createNotification = async (userId, title, message, type = 'info', 
 
 export const notifyAdmins = async (title, message, type = 'info', referenceId = null) => {
     try {
-        const { data: adminRoles } = await supabase
+        const { data: adminRoles, error: rolesError } = await supabase
             .from('user_roles')
             .select('user_id')
             .eq('role', 'admin');
 
+        if (rolesError) {
+            console.error('Failed to fetch admin roles:', rolesError.message);
+            return [];
+        }
         if (!adminRoles || adminRoles.length === 0) return [];
 
         const inserts = adminRoles.map((r) => ({

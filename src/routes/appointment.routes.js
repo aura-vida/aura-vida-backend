@@ -143,7 +143,7 @@ router.get('/appointments/:id', requireAuth, getAppointmentById);
  *       404:
  *         description: Not found
  */
-router.post('/appointments/:id/cancel', requireAuth, requireRole('admin', 'practitioner', 'customer'), cancelAppointment);
+router.post('/appointments/:id/cancel', requireAuth, requireRole('admin', 'practitioner', 'client', 'customer'), cancelAppointment);
 
 /**
  * @swagger

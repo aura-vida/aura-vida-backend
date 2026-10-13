@@ -16,6 +16,7 @@ import {
 } from '../controllers/practitioner.controller.js';
 import { requireAuth, requireRole } from '../middleware/auth.middleware.js';
 import { upload } from '../middleware/upload.middleware.js';
+import { submitPractitionerSupport } from '../controllers/support.controller.js';
 
 const router = express.Router();
 
@@ -131,6 +132,36 @@ router.get('/practitioners/me', requireAuth, requireRole('practitioner'), getMyP
  *         description: Forbidden – Practitioner role required.
  */
 router.patch('/practitioners/me', requireAuth, requireRole('practitioner'), upload.single('image'), updateMyPractitionerProfile);
+
+/**
+ * @swagger
+ * /api/practitioners/support:
+ *   post:
+ *     summary: Submit a support/help communication to Admin
+ *     description: Practitioner submits a message which is dispatched as both an in-app notification and an email to admins with identical title and description.
+ *     tags: [Practitioners]
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [title, description]
+ *             properties:
+ *               title: { type: string, example: "Schedule adjustment inquiry" }
+ *               description: { type: string, example: "I have a question about updating my availability for upcoming holidays." }
+ *               category: { type: string, example: "General" }
+ *     responses:
+ *       201:
+ *         description: Support request submitted and dispatched to admin.
+ *       400:
+ *         description: Title and description required.
+ *       401:
+ *         description: Unauthorized.
+ */
+router.post('/practitioners/support', requireAuth, requireRole('practitioner', 'admin'), submitPractitionerSupport);
 
 /**
  * @swagger
