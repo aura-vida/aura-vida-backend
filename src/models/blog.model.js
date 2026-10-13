@@ -49,7 +49,7 @@ export const listBlogs = async (page, limit, options = {}) => {
     if (authorIds.length > 0) {
         const { data: profs } = await supabase
             .from('profiles')
-            .select('id, full_name, practitioner_slug, avatar_url')
+            .select('id, full_name, practitioner_slug')
             .in('id', authorIds);
         (profs || []).forEach((p) => {
             profilesMap[p.id] = p;
@@ -75,7 +75,7 @@ export const getBlogBySlug = async (slug) => {
     if (data && data.author_id) {
         const { data: prof } = await supabase
             .from('profiles')
-            .select('id, full_name, practitioner_slug, avatar_url')
+            .select('id, full_name, practitioner_slug')
             .eq('id', data.author_id)
             .maybeSingle();
         data.author = prof || null;
