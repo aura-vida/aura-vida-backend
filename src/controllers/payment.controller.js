@@ -10,6 +10,7 @@ import { supabase } from '../config/supabase.js';
 import { getPractitionerBySlug } from '../models/practitioner.model.js';
 import { getServiceById } from '../models/service.model.js';
 import { istToUtcIso } from '../utils/timezone.js';
+import { resolveCoupon } from '../models/coupon.model.js';
 
 // Flat tax applied to the session subtotal, client-requested for now.
 // Keep in sync with SESSION_TAX_RATE in aura-vida-connect/src/lib/pricing.ts
@@ -35,7 +36,7 @@ export const createOrder = async (req, res) => {
         const {
             service_id, practitioner_slug, date, time,
             mode = 'offline', pin, meeting_location,
-            group_size = 1, attendees = [],
+            group_size = 1, attendees = [], coupon_code,
         } = req.body;
 
         if (!service_id || !practitioner_slug || !date || !time) {
@@ -61,10 +62,25 @@ export const createOrder = async (req, res) => {
         const baseInr = practitioner.price_inr || 0;
         const extraRate = 0.6;
         const size = Math.max(1, group_size || 1);
-        const subtotalInr = baseInr + Math.round(baseInr * extraRate) * Math.max(0, size - 1);
+        const originalSubtotalInr = baseInr + Math.round(baseInr * extraRate) * Math.max(0, size - 1);
 
-        // Flat tax on the session subtotal. This, not any client-sent value, is
-        // the authoritative amount — the frontend only mirrors this for preview.
+        // Admin-managed coupon (see coupon.model.js) — eligibility rules
+        // (first-booking-only, minimum booking amount) re-validated here
+        // regardless of any earlier /api/coupons/validate preview call,
+        // since that endpoint is never trusted as the source of truth.
+        let couponCode = null;
+        let discountPercent = 0;
+        if (coupon_code) {
+            const coupon = await resolveCoupon(coupon_code, req.user.id, originalSubtotalInr);
+            couponCode = coupon.code;
+            discountPercent = Number(coupon.discount_percent);
+        }
+        const discountInr = Math.round(originalSubtotalInr * discountPercent / 100);
+        const subtotalInr = originalSubtotalInr - discountInr; // post-coupon, pre-tax
+
+        // Flat tax on the (post-coupon) session subtotal. This, not any
+        // client-sent value, is the authoritative amount — the frontend only
+        // mirrors this for preview.
         const taxInr = Math.round(subtotalInr * SESSION_TAX_RATE);
         const totalInr = subtotalInr + taxInr;
         const amountPaise = Math.round(totalInr * 100);
@@ -85,6 +101,10 @@ export const createOrder = async (req, res) => {
             amountPaise,
             subtotalInr,
             taxInr,
+            originalSubtotalInr,
+            couponCode,
+            discountPercent,
+            discountInr,
             serviceId: service_id,
             serviceName: service.name || 'Aura Vida Session',
             groupSize: size,
@@ -120,9 +140,13 @@ export const createOrder = async (req, res) => {
             itemName: result.itemName,
             groupSize: result.groupSize,
             creditAppliedInr: result.creditAppliedInr,
+            originalSubtotalInr,
             subtotalInr,
             taxInr,
             taxRate: SESSION_TAX_RATE,
+            couponCode,
+            discountPercent,
+            discountInr,
         });
     } catch (err) {
         console.error('createOrder error:', err);

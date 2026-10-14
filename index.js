@@ -19,6 +19,7 @@ import blogRoutes from './src/routes/blog.routes.js';
 import reviewRoutes from './src/routes/review.routes.js';
 import waitlistRoutes from './src/routes/waitlist.routes.js';
 import spaceRoutes from './src/routes/space.routes.js';
+import couponRoutes from './src/routes/coupon.routes.js';
 import { swaggerSpec } from './src/config/swagger.js';
 
 dotenv.config();
@@ -85,6 +86,7 @@ app.use('/api/content', blogRoutes);      // → /api/content/blogs
 app.use('/api/reviews', reviewRoutes);
 app.use('/api', waitlistRoutes);
 app.use('/api', spaceRoutes);
+app.use('/api', couponRoutes);
 
 // Test route
 app.get('/', (req, res) => {

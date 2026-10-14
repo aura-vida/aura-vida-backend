@@ -43,6 +43,7 @@ const router = express.Router();
  *               pin: { type: string, nullable: true }
  *               group_size: { type: integer, default: 1, minimum: 1, maximum: 6 }
  *               attendees: { type: array, items: { type: object }, example: [] }
+ *               coupon_code: { type: string, nullable: true, example: "LAUNCH10", description: "LAUNCH10 or LAUNCH20 — only valid on the customer's first booking" }
  *               meeting_location:
  *                 type: object
  *                 properties:

@@ -25,7 +25,10 @@ const razorpayRequest = async (path, method = 'POST', body = null) => {
 // on the `orders` row (`booking_payload`) and only materialized into
 // `bookings` once payment is verified (see markOrderPaidAndConfirmBooking) —
 // this guarantees abandoned/failed checkouts never register an appointment.
-export const createRazorpayOrder = async ({ serviceId, amountPaise, subtotalInr, taxInr, serviceName, groupSize = 1, customer, referralCredit = 0, bookingPayload }) => {
+export const createRazorpayOrder = async ({
+    serviceId, amountPaise, subtotalInr, taxInr, originalSubtotalInr, couponCode, discountPercent, discountInr,
+    serviceName, groupSize = 1, customer, referralCredit = 0, bookingPayload,
+}) => {
     // Apply referral credit on top (never go below ₹100 i.e. 10000 paise)
     const creditPaise = referralCredit * 100;
     const finalAmount = Math.max(amountPaise - creditPaise, 10000);
@@ -42,6 +45,7 @@ export const createRazorpayOrder = async ({ serviceId, amountPaise, subtotalInr,
             group_size: String(groupSize),
             subtotal_inr: String(subtotalInr ?? ''),
             tax_inr: String(taxInr ?? ''),
+            ...(couponCode ? { coupon_code: couponCode, discount_inr: String(discountInr ?? '') } : {}),
         },
     });
 
@@ -65,6 +69,10 @@ export const createRazorpayOrder = async ({ serviceId, amountPaise, subtotalInr,
                 user_id: customer?.userId || null,
                 subtotal_inr: subtotalInr,
                 tax_inr: taxInr,
+                original_subtotal_inr: originalSubtotalInr,
+                coupon_code: couponCode || null,
+                discount_percent: discountPercent || 0,
+                discount_inr: discountInr || 0,
             },
             booking_payload: bookingPayload,
             status: 'created',
@@ -112,6 +120,9 @@ const sendPaymentReceiptEmail = async (order, paymentId) => {
     const subtotalInr = Number(order.details?.subtotal_inr ?? 0);
     const taxInr = Number(order.details?.tax_inr ?? 0);
     const creditInr = Number(order.details?.credit_applied_inr ?? 0);
+    const originalSubtotalInr = Number(order.details?.original_subtotal_inr ?? subtotalInr);
+    const couponCode = order.details?.coupon_code || null;
+    const discountInr = Number(order.details?.discount_inr ?? 0);
 
     const methodLabels = { card: 'Card', upi: 'UPI', netbanking: 'Net Banking', wallet: 'Wallet', emi: 'EMI' };
     const methodLabel = methodLabels[payment.method] || payment.method || 'Online Payment';
@@ -147,7 +158,8 @@ const sendPaymentReceiptEmail = async (order, paymentId) => {
             </table>
             <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0;">
             <table style="width:100%;font-size:14px;color:#333;">
-              ${subtotalInr ? `<tr><td style="padding:6px 0;color:#888;">Session Price</td><td style="padding:6px 0;text-align:right;">₹${subtotalInr.toLocaleString('en-IN')}</td></tr>` : ''}
+              ${originalSubtotalInr ? `<tr><td style="padding:6px 0;color:#888;">Session Price</td><td style="padding:6px 0;text-align:right;">₹${originalSubtotalInr.toLocaleString('en-IN')}</td></tr>` : ''}
+              ${couponCode && discountInr > 0 ? `<tr><td style="padding:6px 0;color:#1a5c38;">Coupon ${couponCode} (−${order.details?.discount_percent}%)</td><td style="padding:6px 0;text-align:right;color:#1a5c38;">−₹${discountInr.toLocaleString('en-IN')}</td></tr>` : ''}
               ${taxInr ? `<tr><td style="padding:6px 0;color:#888;">Tax (5%)</td><td style="padding:6px 0;text-align:right;">₹${taxInr.toLocaleString('en-IN')}</td></tr>` : ''}
               ${creditInr > 0 ? `<tr><td style="padding:6px 0;color:#1a5c38;">Referral Credit Applied</td><td style="padding:6px 0;text-align:right;color:#1a5c38;">−₹${creditInr.toLocaleString('en-IN')}</td></tr>` : ''}
             </table>
