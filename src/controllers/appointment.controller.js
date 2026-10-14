@@ -72,10 +72,20 @@ export const listPractitionerAppointments = async (req, res) => {
 };
 
 // ─── APT-009: Update Practitioner Appointment Status ─────────────────────────
+// Only two transitions are valid here — cancellation has its own dedicated
+// endpoint (cancelAppointment) with its own refund logic.
+const PRACTITIONER_STATUS_TRANSITIONS = {
+    confirmed: 'pending',   // can only confirm a pending appointment
+    completed: 'confirmed', // can only complete a confirmed appointment
+};
+
 export const updatePractitionerAppointmentStatus = async (req, res) => {
     try {
         const { status } = req.body;
-        if (!status) return res.status(400).json({ error: 'Status is required' });
+        const allowed = Object.keys(PRACTITIONER_STATUS_TRANSITIONS);
+        if (!status || !allowed.includes(status)) {
+            return res.status(400).json({ error: `Status must be one of: ${allowed.join(', ')}` });
+        }
 
         const { data: prof, error: slugErr } = await supabase
             .from('profiles')
@@ -90,13 +100,20 @@ export const updatePractitionerAppointmentStatus = async (req, res) => {
 
         const { data: booking, error: fetchErr } = await supabase
             .from('bookings')
-            .select('id, practitioner_slug')
+            .select('id, practitioner_slug, status')
             .eq('id', req.params.id)
             .single();
 
         if (fetchErr || !booking) return res.status(404).json({ error: 'Appointment not found' });
         if (booking.practitioner_slug !== slug && req.user.role !== 'admin') {
             return res.status(403).json({ error: 'Forbidden' });
+        }
+
+        const requiredCurrentStatus = PRACTITIONER_STATUS_TRANSITIONS[status];
+        if (booking.status !== requiredCurrentStatus) {
+            return res.status(400).json({
+                error: `Cannot mark as '${status}' — appointment is '${booking.status}', not '${requiredCurrentStatus}'.`,
+            });
         }
 
         const { data, error } = await supabase

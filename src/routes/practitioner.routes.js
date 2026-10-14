@@ -277,7 +277,14 @@ router.get('/admin/practitioners/:id', requireAuth, requireRole('admin'), adminG
  * /api/admin/practitioners:
  *   post:
  *     summary: Create a new practitioner (PRAC-003)
- *     description: Admin only. Creates a new practitioner record.
+ *     description: |
+ *       Admin only. Creates a new practitioner record AND immediately creates their
+ *       login: a Supabase Auth user (which emails them an invite to set their
+ *       password), linked via a `profiles` row + `practitioner` role — the same
+ *       mechanism `POST /api/admin/practitioners/:id/approve` uses for the public
+ *       apply flow. `email`, `mobile_number`, and `whatsapp_number` are required for
+ *       this reason; a practitioner created without them would have no way to ever
+ *       log into the Guide Portal.
  *     tags: [Practitioners]
  *     security:
  *       - BearerAuth: []
@@ -287,10 +294,12 @@ router.get('/admin/practitioners/:id', requireAuth, requireRole('admin'), adminG
  *         application/json:
  *           schema:
  *             type: object
- *             required: [name, slug]
+ *             required: [name, email, mobile_number, whatsapp_number]
  *             properties:
- *               name:       { type: string, example: 'Jane Doe' }
- *               slug:       { type: string, example: 'jane-doe' }
+ *               name:             { type: string, example: 'Jane Doe' }
+ *               email:            { type: string, example: 'jane@example.com', description: "Where the login invite is sent — becomes application_email" }
+ *               mobile_number:    { type: string, example: '+91 98765 43210' }
+ *               whatsapp_number:  { type: string, example: '+91 98765 43210' }
  *               bio:        { type: string }
  *               city:       { type: string }
  *               craft:      { type: string }
@@ -299,7 +308,9 @@ router.get('/admin/practitioners/:id', requireAuth, requireRole('admin'), adminG
  *               bookable:   { type: boolean, default: false }
  *     responses:
  *       201:
- *         description: Practitioner created.
+ *         description: Practitioner created and invite sent.
+ *       400:
+ *         description: Missing/invalid name, email, mobile_number, or whatsapp_number.
  *       403:
  *         description: Forbidden – Admin role required.
  */

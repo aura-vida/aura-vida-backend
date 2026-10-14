@@ -118,11 +118,16 @@ export const adminGetPractitionerById = async (req, res) => {
  */
 export const adminCreatePractitioner = async (req, res) => {
     try {
-        const data = await createPractitioner(req.body);
-        res.status(201).json({ message: 'Practitioner created successfully', practitioner: data });
+        const { practitioner, email } = await createPractitioner(req.body);
+        res.status(201).json({
+            message: `Practitioner created — an invite email has been sent to ${email}.`,
+            practitioner,
+            email,
+        });
     } catch (error) {
         console.error('adminCreatePractitioner error:', error);
-        res.status(500).json({ error: 'Failed to create practitioner' });
+        const status = error.statusCode || 500;
+        res.status(status).json({ error: error.message || 'Failed to create practitioner' });
     }
 };
 

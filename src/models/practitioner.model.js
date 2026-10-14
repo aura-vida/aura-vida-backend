@@ -124,17 +124,119 @@ export const getPractitionerById = async (id) => {
 };
 
 /**
+ * Creates the actual login for a practitioner: a Supabase Auth user (which
+ * sends them an invite email to set their password), a `profiles` row linked
+ * to their practitioner slug, and the `practitioner` role. Shared by both
+ * `createPractitioner` (admin direct-create) and `approvePractitioner`
+ * (apply-flow) so the two paths never drift apart.
+ */
+const createPractitionerAccount = async ({ slug, name, email }) => {
+    const { data: authData, error: authErr } = await supabase.auth.admin.inviteUserByEmail(
+        email,
+        {
+            data: { role: 'practitioner', practitioner_slug: slug },
+            redirectTo: `${process.env.SITE_URL || 'http://localhost:8080'}/practitioner`,
+        }
+    );
+
+    if (authErr) {
+        // If user already exists just continue
+        if (!authErr.message?.includes('already been registered')) throw authErr;
+    }
+
+    let authUserId = authData?.user?.id;
+
+    // If user already existed, inviteUserByEmail fails but we can get their ID via generateLink
+    if (!authUserId) {
+        const { data: linkData } = await supabase.auth.admin.generateLink({
+            type: 'magiclink',
+            email,
+        });
+        authUserId = linkData?.user?.id;
+    }
+
+    if (authUserId) {
+        const { error: profileErr } = await supabase.from('profiles').upsert({
+            id: authUserId,
+            practitioner_slug: slug,
+            full_name: name,
+            updated_at: new Date().toISOString(),
+        }, { onConflict: 'id' });
+
+        if (profileErr) {
+            console.error('Failed to upsert practitioner profile:', profileErr);
+            throw profileErr;
+        }
+
+        // The authoritative role is in `user_roles`, not profiles
+        const { data: existingRole } = await supabase.from('user_roles').select('*').eq('user_id', authUserId).maybeSingle();
+        if (existingRole) {
+            await supabase.from('user_roles').update({ role: 'practitioner' }).eq('user_id', authUserId);
+        } else {
+            await supabase.from('user_roles').insert([{ user_id: authUserId, role: 'practitioner' }]);
+        }
+    }
+
+    return authUserId;
+};
+
+/**
  * PRAC-003: Create a new practitioner (admin only)
+ * Unlike the old bare insert, this requires an email + phone numbers and
+ * immediately creates a real login for the practitioner (same invite-email
+ * mechanism as approvePractitioner) — an admin-created practitioner used to
+ * be a directory listing only, with no way to ever log into the Guide Portal.
  */
 export const createPractitioner = async (fields) => {
+    const { email, mobile_number, whatsapp_number, name, ...rest } = fields;
+
+    if (!name || !String(name).trim()) {
+        const err = new Error('Name is required.');
+        err.statusCode = 400;
+        throw err;
+    }
+    if (!email) {
+        const err = new Error('An email is required to create this practitioner\'s login.');
+        err.statusCode = 400;
+        throw err;
+    }
+    if (!mobile_number || !isValidPhoneNumber(mobile_number)) {
+        const err = new Error('A valid mobile number is required.');
+        err.statusCode = 400;
+        throw err;
+    }
+    if (!whatsapp_number || !isValidPhoneNumber(whatsapp_number)) {
+        const err = new Error('A valid WhatsApp number (with country code) is required.');
+        err.statusCode = 400;
+        throw err;
+    }
+
+    // Always generate a fresh, unique slug server-side — never trust a
+    // client-supplied one (two practitioners with the same name would
+    // otherwise collide on the table's unique slug constraint).
+    const slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now();
+    const normalizedEmail = String(email).trim().toLowerCase();
+
+    // Create the login first — if the invite fails, no orphaned directory
+    // listing (with no way to ever log in) is left behind.
+    await createPractitionerAccount({ slug, name: name.trim(), email: normalizedEmail });
+
     const { data, error } = await supabase
         .from('practitioners')
-        .insert([fields])
+        .insert([{
+            ...rest,
+            name: name.trim(),
+            slug,
+            mobile_number: mobile_number.trim(),
+            whatsapp_number: whatsapp_number.trim(),
+            application_email: normalizedEmail,
+            application_status: 'approved',
+        }])
         .select()
         .single();
 
     if (error) throw error;
-    return data;
+    return { practitioner: data, email: normalizedEmail };
 };
 
 /**
@@ -367,53 +469,9 @@ export const approvePractitioner = async (id) => {
         throw err;
     }
 
-    // 2. Create Supabase auth user (this sends the invite / welcome email automatically)
-    const { data: authData, error: authErr } = await supabase.auth.admin.inviteUserByEmail(
-        prac.application_email,
-        {
-            data: { role: 'practitioner', practitioner_slug: prac.slug },
-            redirectTo: `${process.env.SITE_URL || 'http://localhost:8080'}/practitioner`,
-        }
-    );
-
-    if (authErr) {
-        // If user already exists just continue
-        if (!authErr.message?.includes('already been registered')) throw authErr;
-    }
-
-    let authUserId = authData?.user?.id;
-
-    // If user already existed, inviteUserByEmail fails but we can get their ID via generateLink
-    if (!authUserId) {
-        const { data: linkData } = await supabase.auth.admin.generateLink({
-            type: 'magiclink',
-            email: prac.application_email,
-        });
-        authUserId = linkData?.user?.id;
-    }
-
-    // 3. Upsert profile and update user_roles
-    if (authUserId) {
-        const { error: profileErr } = await supabase.from('profiles').upsert({
-            id: authUserId,
-            practitioner_slug: prac.slug,
-            full_name: prac.name,
-            updated_at: new Date().toISOString(),
-        }, { onConflict: 'id' });
-
-        if (profileErr) {
-            console.error('Failed to upsert practitioner profile:', profileErr);
-            throw profileErr;
-        }
-
-        // The authoritative role is in `user_roles`, not profiles
-        const { data: existingRole } = await supabase.from('user_roles').select('*').eq('user_id', authUserId).maybeSingle();
-        if (existingRole) {
-            await supabase.from('user_roles').update({ role: 'practitioner' }).eq('user_id', authUserId);
-        } else {
-            await supabase.from('user_roles').insert([{ user_id: authUserId, role: 'practitioner' }]);
-        }
-    }
+    // 2 & 3. Create the Supabase auth user (sends the invite email) and link
+    // the profile + role — shared with admin direct-create (createPractitioner).
+    await createPractitionerAccount({ slug: prac.slug, name: prac.name, email: prac.application_email });
 
     // 4. Mark the practitioner as approved + published
     const { data: updated, error: updateErr } = await supabase

@@ -67,7 +67,18 @@ export const getUserProfile = async (userId) => {
         .eq('user_id', userId)
         .single();
 
-    return { ...(profile || {}), role: roleData?.role };
+    // Referral count for the "Friends joined" stat. Read with the service-role
+    // client (here) rather than the frontend querying `referrals` directly —
+    // that table's RLS checks `auth.uid()`, which is never set for the
+    // frontend's Supabase client since this app's own login flow never
+    // establishes a Supabase session on it, so a direct client-side query
+    // always silently returns zero rows regardless of real data.
+    const { count: referralCount } = await supabase
+        .from('referrals')
+        .select('*', { count: 'exact', head: true })
+        .eq('referrer_id', userId);
+
+    return { ...(profile || {}), role: roleData?.role, referral_count: referralCount || 0 };
 };
 
 /**
