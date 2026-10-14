@@ -33,7 +33,7 @@ const allowedOrigins = [
     'http://localhost:5173',
     'http://3.107.114.205:5000',
     'https://kusalabackend.duckdns.org',
-    'https://witch-edges-sir-functions.trycloudflare.com',
+    'https://neon-exclusive-london-scene.trycloudflare.com',
     process.env.FRONTEND_URL,
 ].filter(Boolean);
 

@@ -3,12 +3,18 @@ import { createUserProfile, getUserProfile } from '../models/user.model.js';
 
 export const register = async (req, res) => {
     try {
-        const { email, password, name, role = 'Customer' } = req.body;
+        const { email, password, name, role = 'Customer', referral_code } = req.body;
 
         // 1. Create user in Supabase Auth (using anon-key client to avoid session contamination)
+        // referral_code is passed via raw_user_meta_data so the handle_new_user()
+        // DB trigger can look up the referrer and create the `referrals` row —
+        // without this, a referral link never actually links the two accounts,
+        // and neither party is ever credited when the referred user books.
+        const normalizedReferralCode = referral_code ? String(referral_code).trim().toUpperCase() : null;
         const { data: authData, error: authError } = await supabaseAuth.auth.signUp({
             email,
             password,
+            options: normalizedReferralCode ? { data: { referral_code: normalizedReferralCode } } : undefined,
         });
 
         if (authError) {

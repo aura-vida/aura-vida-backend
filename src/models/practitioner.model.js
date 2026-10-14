@@ -1,4 +1,5 @@
 import { supabase } from '../config/supabase.js';
+import { isValidPhoneNumber } from '../utils/validation.js';
 
 // ─── Public ──────────────────────────────────────────────────────────────────
 
@@ -15,7 +16,8 @@ export const listPractitioners = async (filters = {}) => {
         .from('practitioners')
         .select('*', { count: 'exact' })
         .eq('is_published', true)
-        .order('sort_order', { ascending: true });
+        .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: false });
 
     if (filters.craft) query = query.eq('craft', filters.craft);
     if (filters.city) query = query.eq('city', filters.city);
@@ -42,6 +44,43 @@ export const getPractitionerBySlug = async (slug) => {
     return data;
 };
 
+/**
+ * PRAC-002b: Get the services actually assigned to a practitioner (public)
+ * Used by the booking flow so pricing/duration reflect what this specific
+ * practitioner offers instead of the entire global services catalog.
+ */
+export const getServicesForPractitionerSlug = async (slug) => {
+    const practitioner = await getPractitionerBySlug(slug);
+
+    const { data, error } = await supabase
+        .from('practitioner_services')
+        .select('services(*)')
+        .eq('practitioner_id', practitioner.id);
+
+    if (error) throw error;
+
+    const assigned = (data || [])
+        .map((row) => row.services)
+        .filter((service) => service && service.is_active !== false)
+        .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+
+    if (assigned.length > 0) return assigned;
+
+    // No admin-assigned services for this practitioner yet — fall back to the
+    // full active catalog so the booking flow still has options to pick from.
+    // Pricing is never taken from here: the amount actually charged always
+    // comes from the practitioner's own `price_inr` (see payment.controller.js).
+    const { data: allServices, error: allErr } = await supabase
+        .from('services')
+        .select('*')
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: false });
+
+    if (allErr) throw allErr;
+    return allServices || [];
+};
+
 // ─── Admin ────────────────────────────────────────────────────────────────────
 
 /**
@@ -56,7 +95,7 @@ export const adminListPractitioners = async (filters = {}) => {
     let query = supabase
         .from('practitioners')
         .select('*', { count: 'exact' })
-        .order('sort_order', { ascending: true });
+        .order('created_at', { ascending: false });
 
     if (filters.craft) query = query.eq('craft', filters.craft);
     if (filters.city) query = query.eq('city', filters.city);
@@ -210,10 +249,21 @@ export const getOwnPractitionerProfile = async (practitionerSlug) => {
  * Practitioners cannot change their slug, sort_order, is_published, or bookable status.
  */
 export const updateOwnPractitionerProfile = async (practitionerSlug, fields) => {
-    const allowedFields = ['name', 'bio', 'city', 'craft', 'price_inr', 'image_url', 'calendly_link', 'base_lat', 'base_lng', 'base_address', 'pincode', 'keywords'];
+    const allowedFields = ['name', 'bio', 'city', 'craft', 'price_inr', 'image_url', 'calendly_link', 'base_lat', 'base_lng', 'base_address', 'pincode', 'keywords', 'mobile_number', 'whatsapp_number'];
     const sanitized = {};
     for (const key of allowedFields) {
         if (fields[key] !== undefined) sanitized[key] = fields[key];
+    }
+
+    if (sanitized.mobile_number !== undefined && sanitized.mobile_number && !isValidPhoneNumber(sanitized.mobile_number)) {
+        const err = new Error('Mobile number is not valid.');
+        err.statusCode = 400;
+        throw err;
+    }
+    if (sanitized.whatsapp_number !== undefined && sanitized.whatsapp_number && !isValidPhoneNumber(sanitized.whatsapp_number)) {
+        const err = new Error('WhatsApp number is not valid.');
+        err.statusCode = 400;
+        throw err;
     }
 
     const { data, error } = await supabase
@@ -235,11 +285,24 @@ export const updateOwnPractitionerProfile = async (practitionerSlug, fields) => 
  */
 export const applyPractitioner = async (fields) => {
     const {
-        name, email, bio, craft, city, rating, sessions, price_inr
+        name, email, bio, craft, city, rating, sessions, price_inr,
+        mobile_number, whatsapp_number,
     } = fields;
 
     if (!name || !email) {
         const err = new Error('Name and email are required');
+        err.statusCode = 400;
+        throw err;
+    }
+
+    if (!mobile_number || !isValidPhoneNumber(mobile_number)) {
+        const err = new Error('A valid mobile number is required.');
+        err.statusCode = 400;
+        throw err;
+    }
+
+    if (!whatsapp_number || !isValidPhoneNumber(whatsapp_number)) {
+        const err = new Error('A valid WhatsApp number (with country code) is required.');
         err.statusCode = 400;
         throw err;
     }
@@ -258,6 +321,8 @@ export const applyPractitioner = async (fields) => {
             rating: parseFloat(rating) || 5,
             sessions: parseInt(sessions) || 0,
             price_inr: parseInt(price_inr) || 0,
+            mobile_number: mobile_number.trim(),
+            whatsapp_number: whatsapp_number.trim(),
             is_published: false,
             bookable: false,
             application_email: email.trim().toLowerCase(),

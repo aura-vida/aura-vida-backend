@@ -1,113 +1,7 @@
 import { supabase } from '../config/supabase.js';
 import { getPractitionerBySlug } from '../models/practitioner.model.js';
-import { getServiceById } from '../models/service.model.js';
 import { createNotification, notifyAdmins } from '../models/notification.model.js';
-
-// ─── Helper: fetch profile full_name for client_name denorm ──────────────────
-const getProfileName = async (userId) => {
-    const { data } = await supabase
-        .from('profiles')
-        .select('full_name')
-        .eq('id', userId)
-        .single();
-    return data?.full_name || null;
-};
-
-// ─── APT-001: Create Booking ─────────────────────────────────────────────────
-export const createAppointment = async (req, res) => {
-    try {
-        const { service_id, practitioner_slug, date, time, meeting_location, group_size = 1, attendees = [] } = req.body;
-
-        if (!service_id || !practitioner_slug || !date || !time) {
-            return res.status(400).json({ error: 'service_id, practitioner_slug, date, and time are required.' });
-        }
-
-        const scheduled_at = new Date(`${date}T${time}:00.000Z`).toISOString();
-
-        // Fetch denormalized fields the DB requires
-        const [practitioner, service, clientName] = await Promise.all([
-            getPractitionerBySlug(practitioner_slug),
-            getServiceById(service_id),
-            getProfileName(req.user.id),
-        ]);
-
-        const { data: booking, error } = await supabase
-            .from('bookings')
-            .insert([{
-                client_id: req.user.id,
-                client_name: clientName,
-                practitioner_slug,
-                practitioner_name: practitioner.name,
-                item_id: service_id,
-                // Apply same group pricing as frontend: base + 60% extra per additional person
-                amount: (() => {
-                    const baseInr = service.price_inr || 0;
-                    const extraRate = 0.6;
-                    const size = Math.max(1, group_size || 1);
-                    const totalInr = baseInr + Math.round(baseInr * extraRate) * Math.max(0, size - 1);
-                    return Math.round(totalInr * 100); // convert to paise
-                })(),
-                currency: 'INR',
-                mode: req.body.mode || 'offline',
-                scheduled_at,
-                status: 'pending',
-                group_size: group_size || 1,
-                attendees: attendees || [],
-                meeting_location: meeting_location || null,
-            }])
-            .select()
-            .single();
-
-        if (error) throw error;
-
-        try {
-            const formattedDate = new Date(scheduled_at).toLocaleString();
-
-            // Notify client
-            await createNotification(
-                req.user.id,
-                'Booking Created',
-                `Your appointment with ${practitioner_slug} has been successfully requested for ${formattedDate}.`,
-                'booking',
-                booking.id
-            );
-
-            // Notify practitioner
-            const { data: prac } = await supabase
-                .from('profiles')
-                .select('id')
-                .eq('practitioner_slug', practitioner_slug)
-                .maybeSingle();
-
-            if (prac?.id) {
-                await createNotification(
-                    prac.id,
-                    'New Appointment Request',
-                    `A new appointment has been scheduled with you on ${formattedDate}.`,
-                    'booking',
-                    booking.id
-                );
-            }
-
-            // Notify admins
-            await notifyAdmins(
-                'New Platform Booking',
-                `New appointment requested with ${practitioner_slug} on ${formattedDate}.`,
-                'booking',
-                booking.id
-            );
-        } catch (notifErr) {
-            console.error('Failed to trigger notifications during booking:', notifErr);
-            // Non-blocking: We don't fail the booking if notification fails
-        }
-
-        res.status(201).json({ message: 'Appointment booked successfully', booking });
-    } catch (err) {
-        console.error('createAppointment error:', err);
-        const status = err.statusCode || 500;
-        res.status(status).json({ error: err.message || 'Failed to create appointment' });
-    }
-};
+import { istToUtcIso } from '../utils/timezone.js';
 
 // ─── APT-002: List My Appointments (Customer) ────────────────────────────────
 export const listMyAppointments = async (req, res) => {
@@ -462,11 +356,15 @@ export const rescheduleAppointment = async (req, res) => {
             return res.status(400).json({ error: `Cannot reschedule a '${booking.status}' booking.` });
         }
 
-        const scheduled_at = new Date(`${date}T${time}:00.000Z`).toISOString();
+        // `date`/`time` are always IST wall-clock (this platform is India-only) —
+        // convert to the correct UTC instant rather than treating them as UTC.
+        const scheduled_at = istToUtcIso(date, time);
 
+        // Only the date/time changes — payment status is unaffected by a
+        // reschedule, so `status` (e.g. 'confirmed') is left exactly as-is.
         const { data, error } = await supabase
             .from('bookings')
-            .update({ scheduled_at, status: 'pending' }) // resets back to pending for re-confirmation
+            .update({ scheduled_at })
             .eq('id', req.params.id)
             .select()
             .single();
@@ -475,7 +373,7 @@ export const rescheduleAppointment = async (req, res) => {
 
         // Trigger rescheduling notifications (non-blocking)
         try {
-            const formattedDate = new Date(scheduled_at).toLocaleString();
+            const formattedDate = new Date(scheduled_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
             await createNotification(
                 booking.client_id,
                 'Session Rescheduled',

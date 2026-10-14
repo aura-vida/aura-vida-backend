@@ -11,7 +11,8 @@ export const listServices = async (filters = {}) => {
         .from('services')
         .select('*', { count: 'exact' })
         .eq('is_active', true)
-        .order('sort_order', { ascending: true });
+        .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: false });
 
     if (filters.category) query = query.eq('category', filters.category);
 

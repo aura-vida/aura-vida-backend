@@ -4,38 +4,72 @@ import {
     markOrderPaidAndConfirmBooking,
     verifyWebhookSignature,
     createRefund,
+    reconcilePayments,
 } from '../models/payment.model.js';
 import { supabase } from '../config/supabase.js';
+import { getPractitionerBySlug } from '../models/practitioner.model.js';
+import { getServiceById } from '../models/service.model.js';
+import { istToUtcIso } from '../utils/timezone.js';
+
+// Flat tax applied to the session subtotal, client-requested for now.
+// Keep in sync with SESSION_TAX_RATE in aura-vida-connect/src/lib/pricing.ts
+// (that copy is display-only — this is the authoritative one).
+export const SESSION_TAX_RATE = 0.05;
+
+// ─── Helper: fetch profile full_name for client_name denorm ──────────────────
+const getProfileName = async (userId) => {
+    const { data } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', userId)
+        .single();
+    return data?.full_name || null;
+};
 
 // ─── PAY-001: Create Razorpay Order ──────────────────────────────────────────
+// No booking is created here. The booking is only persisted once payment is
+// verified (see markOrderPaidAndConfirmBooking) so that abandoned/failed
+// checkouts never leave a registered appointment behind.
 export const createOrder = async (req, res) => {
     try {
-        const { booking_id } = req.body;
-        if (!booking_id) return res.status(400).json({ error: 'booking_id is required.' });
+        const {
+            service_id, practitioner_slug, date, time,
+            mode = 'offline', pin, meeting_location,
+            group_size = 1, attendees = [],
+        } = req.body;
 
-        // 1. Fetch the booking + service price
-        const { data: booking, error: bErr } = await supabase
-            .from('bookings')
-            .select('*, item_id, amount, group_size, client_id, status')
-            .eq('id', booking_id)
-            .single();
-
-        if (bErr || !booking) return res.status(404).json({ error: 'Booking not found.' });
-        if (booking.client_id !== req.user.id) return res.status(403).json({ error: 'Forbidden.' });
-        if (booking.status !== 'pending') return res.status(400).json({ error: `Booking is already '${booking.status}'. Cannot create a payment for it.` });
-
-        // Check if order already exists for this booking
-        const { data: existing } = await supabase
-            .from('orders')
-            .select('razorpay_order_id, amount, status')
-            .eq('booking_id', booking_id)
-            .maybeSingle();
-
-        if (existing && existing.status === 'paid') {
-            return res.status(409).json({ error: 'This booking has already been paid.' });
+        if (!service_id || !practitioner_slug || !date || !time) {
+            return res.status(400).json({ error: 'service_id, practitioner_slug, date, and time are required.' });
         }
 
-        // 2. Fetch referral credit for the customer
+        // `date`/`time` are always IST wall-clock (this platform is India-only) —
+        // convert to the correct UTC instant rather than treating them as UTC.
+        const scheduled_at = istToUtcIso(date, time);
+
+        // 1. Fetch denormalized fields the eventual booking row requires
+        const [practitioner, service, clientName] = await Promise.all([
+            getPractitionerBySlug(practitioner_slug),
+            getServiceById(service_id),
+            getProfileName(req.user.id),
+        ]);
+
+        // 2. Compute amount (base + 60% extra per additional group member), in paise.
+        // Price is always driven by the PRACTITIONER's own rate, not the chosen
+        // service's catalog price — services aren't priced per-practitioner, so
+        // using service.price_inr would charge whatever the selected service
+        // happens to cost globally instead of what this practitioner charges.
+        const baseInr = practitioner.price_inr || 0;
+        const extraRate = 0.6;
+        const size = Math.max(1, group_size || 1);
+        const subtotalInr = baseInr + Math.round(baseInr * extraRate) * Math.max(0, size - 1);
+
+        // Flat tax on the session subtotal. This, not any client-sent value, is
+        // the authoritative amount — the frontend only mirrors this for preview.
+        const taxInr = Math.round(subtotalInr * SESSION_TAX_RATE);
+        const totalInr = subtotalInr + taxInr;
+        const amountPaise = Math.round(totalInr * 100);
+
+        // 3. Fetch referral credit for the customer
         const { data: profile } = await supabase
             .from('profiles')
             .select('full_name, credit_inr')
@@ -44,26 +78,38 @@ export const createOrder = async (req, res) => {
 
         const referralCredit = Number(profile?.credit_inr ?? 0);
 
-        // 3. Get service name
-        const { data: service } = await supabase
-            .from('services')
-            .select('name')
-            .eq('id', booking.item_id)
-            .maybeSingle();
-
-        // 4. Create Razorpay order (amount already stored in booking as paise)
+        // 4. Create the Razorpay order, stashing the full booking payload on
+        // the `orders` row so it can be materialized into `bookings` on
+        // successful payment verification — never before.
         const result = await createRazorpayOrder({
-            bookingId: booking_id,
-            amountPaise: booking.amount,  // already in paise from APT-001
-            serviceName: service?.name || 'Aura Vida Session',
-            groupSize: booking.group_size || 1,
+            amountPaise,
+            subtotalInr,
+            taxInr,
+            serviceId: service_id,
+            serviceName: service.name || 'Aura Vida Session',
+            groupSize: size,
             customer: {
-                name: profile?.full_name || '',
+                name: profile?.full_name || clientName || '',
                 email: req.user.email || '',
                 phone: '',
                 userId: req.user.id,
             },
             referralCredit,
+            bookingPayload: {
+                client_id: req.user.id,
+                client_name: clientName,
+                practitioner_slug,
+                practitioner_name: practitioner.name,
+                item_id: service_id,
+                amount: amountPaise,
+                currency: 'INR',
+                mode,
+                scheduled_at,
+                group_size: size,
+                attendees: attendees || [],
+                meeting_location: meeting_location || null,
+                pin: pin || null,
+            },
         });
 
         res.status(201).json({
@@ -74,6 +120,9 @@ export const createOrder = async (req, res) => {
             itemName: result.itemName,
             groupSize: result.groupSize,
             creditAppliedInr: result.creditAppliedInr,
+            subtotalInr,
+            taxInr,
+            taxRate: SESSION_TAX_RATE,
         });
     } catch (err) {
         console.error('createOrder error:', err);
@@ -162,11 +211,46 @@ export const refundPayment = async (req, res) => {
             message: 'Refund initiated successfully.',
             refund_id: refund.id,
             amount_refunded_inr: refund.amount / 100,
+            non_refundable_tax_inr: refund.non_refundable_tax_inr,
             status: refund.status,
         });
     } catch (err) {
         console.error('refundPayment error:', err);
         const status = err.statusCode || 500;
         res.status(status).json({ error: err.message || 'Failed to initiate refund' });
+    }
+};
+
+// ─── PAY-005: Reconcile local orders against Razorpay's own payment records ──
+// Admin-triggered audit: pulls Razorpay's actual captured payments for a date
+// range and cross-checks them against our `orders` table — the source the
+// admin dashboard's revenue figures are read from. Self-heals any payment
+// Razorpay captured but that never got marked paid locally (both the client
+// verify call and the webhook failing is rare, but this is the safety net
+// for it), and flags anything it can't safely auto-fix for manual review.
+export const reconcilePaymentsHandler = async (req, res) => {
+    try {
+        const { from, to } = req.query;
+
+        // Default to the last 48 hours if no range is given.
+        const toUnix = to ? Math.floor(new Date(to).getTime() / 1000) : Math.floor(Date.now() / 1000);
+        const fromUnix = from
+            ? Math.floor(new Date(from).getTime() / 1000)
+            : toUnix - 48 * 60 * 60;
+
+        if (Number.isNaN(fromUnix) || Number.isNaN(toUnix)) {
+            return res.status(400).json({ error: 'from/to must be valid dates.' });
+        }
+
+        const results = await reconcilePayments({ fromUnix, toUnix });
+        res.status(200).json({
+            message: 'Reconciliation complete.',
+            range: { from: new Date(fromUnix * 1000).toISOString(), to: new Date(toUnix * 1000).toISOString() },
+            ...results,
+        });
+    } catch (err) {
+        console.error('reconcilePaymentsHandler error:', err);
+        const status = err.statusCode || 500;
+        res.status(status).json({ error: err.message || 'Failed to reconcile payments' });
     }
 };

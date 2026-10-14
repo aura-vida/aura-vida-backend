@@ -1,4 +1,5 @@
 import { supabase } from '../config/supabase.js';
+import { istDayBoundsUtc, utcIsoToIstTime } from '../utils/timezone.js';
 
 // ─── AV-001: Get practitioner schedule (public) ───────────────────────────────
 export const getPractitionerSchedule = async (slug) => {
@@ -146,9 +147,10 @@ export const calculateAvailableSlots = async (slug, dateStr) => {
         .eq('practitioner_slug', slug)
         .eq('exception_date', dateStr);
 
-    // 3. Get all existing confirmed bookings for that day
-    const dayStart = `${dateStr}T00:00:00.000Z`;
-    const dayEnd = `${dateStr}T23:59:59.999Z`;
+    // 3. Get all existing confirmed bookings for that IST calendar day
+    // (dateStr/start_time/end_time are all IST wall-clock, so the day
+    // boundaries must be IST-day bounds converted to UTC, not UTC-day bounds).
+    const { start: dayStart, end: dayEnd } = istDayBoundsUtc(dateStr);
     const { data: bookings } = await supabase
         .from('bookings')
         .select('scheduled_at, item_id')
@@ -158,10 +160,7 @@ export const calculateAvailableSlots = async (slug, dateStr) => {
         .lte('scheduled_at', dayEnd);
 
     // 4. Generate all possible slots, then subtract exceptions and booked slots
-    const bookedTimes = new Set((bookings || []).map(b => {
-        const d = new Date(b.scheduled_at);
-        return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
-    }));
+    const bookedTimes = new Set((bookings || []).map(b => utcIsoToIstTime(b.scheduled_at)));
 
     const blockedRanges = (exceptions || []).map(e => ({
         start: e.start_time.slice(0, 5),

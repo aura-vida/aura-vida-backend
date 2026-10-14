@@ -2,6 +2,7 @@ import express from 'express';
 import {
     getPractitioners,
     getPractitionerProfile,
+    getPractitionerServices,
     adminCreatePractitioner,
     adminUpdatePractitioner,
     adminDeletePractitioner,
@@ -183,6 +184,26 @@ router.post('/practitioners/support', requireAuth, requireRole('practitioner', '
  *         description: Practitioner not found.
  */
 router.get('/practitioners/:slug', getPractitionerProfile);
+
+/**
+ * @swagger
+ * /api/practitioners/{slug}/services:
+ *   get:
+ *     summary: Get the services assigned to a practitioner (PRAC-002b)
+ *     description: Returns only the services this practitioner actually offers (via admin service assignment), so booking pricing/duration reflect this practitioner instead of the global catalog. No authentication required.
+ *     tags: [Practitioners]
+ *     parameters:
+ *       - in: path
+ *         name: slug
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: List of services assigned to this practitioner.
+ *       404:
+ *         description: Practitioner not found.
+ */
+router.get('/practitioners/:slug/services', getPractitionerServices);
 
 // ─── Admin routes ─────────────────────────────────────────────────────────────
 

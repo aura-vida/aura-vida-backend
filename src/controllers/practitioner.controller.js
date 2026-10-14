@@ -1,6 +1,7 @@
 import {
     listPractitioners,
     getPractitionerBySlug,
+    getServicesForPractitionerSlug,
     createPractitioner,
     updatePractitionerById,
     deactivatePractitioner,
@@ -46,6 +47,19 @@ export const getPractitionerProfile = async (req, res) => {
 };
 
 /**
+ * PRAC-002b: GET /api/practitioners/:slug/services
+ */
+export const getPractitionerServices = async (req, res) => {
+    try {
+        const services = await getServicesForPractitionerSlug(req.params.slug);
+        res.status(200).json({ services });
+    } catch (error) {
+        console.error('getPractitionerServices error:', error);
+        res.status(404).json({ error: 'Practitioner not found' });
+    }
+};
+
+/**
  * PRAC-APPLY: POST /api/practitioners/apply
  */
 export const applyToJoinAsPractitioner = async (req, res) => {
@@ -65,7 +79,8 @@ export const applyToJoinAsPractitioner = async (req, res) => {
         res.status(201).json({ message: 'Application submitted successfully', practitioner: data });
     } catch (error) {
         console.error('applyToJoinAsPractitioner error:', error);
-        res.status(500).json({ error: 'Failed to submit application' });
+        const status = error.statusCode || 500;
+        res.status(status).json({ error: error.message || 'Failed to submit application' });
     }
 };
 

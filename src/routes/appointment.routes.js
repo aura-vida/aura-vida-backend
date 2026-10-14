@@ -1,6 +1,5 @@
 import express from 'express';
 import {
-    createAppointment,
     listMyAppointments,
     getAppointmentById,
     cancelAppointment,
@@ -20,49 +19,6 @@ const router = express.Router();
  *   name: Appointments
  *   description: Appointment booking and lifecycle APIs
  */
-
-/**
- * @swagger
- * /api/appointments:
- *   post:
- *     summary: Create booking (APT-001)
- *     description: Creates a new appointment booking for the authenticated Customer. The `meeting_location` should be the location object the customer selected via the Google Places API on the frontend (based on the practitioner's base coordinates).
- *     tags: [Appointments]
- *     security:
- *       - BearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [service_id, practitioner_slug, date, time]
- *             properties:
- *               service_id: { type: string, format: uuid, example: "064dbf93-480e-47e9-b7f3-a57e1868f599" }
- *               practitioner_slug: { type: string, example: "alex-practitioner" }
- *               date: { type: string, format: date, example: "2026-10-10" }
- *               time: { type: string, example: "10:00" }
- *               group_size: { type: integer, default: 1, minimum: 1, maximum: 6 }
- *               attendees: { type: array, items: { type: string }, example: [] }
- *               meeting_location:
- *                 type: object
- *                 properties:
- *                   lat: { type: number, example: 19.0522 }
- *                   lng: { type: number, example: 72.8427 }
- *                   address: { type: string, example: "Starbucks, Bandra Kurla Complex" }
- *                   place_id: { type: string, example: "ChIJ_z_mFnb55zsR2wZ" }
- *                   pincode: { type: string, example: "400051" }
- *     responses:
- *       201:
- *         description: Appointment booked successfully
- *       400:
- *         description: Invalid input
- *       401:
- *         description: Unauthorized
- *       403:
- *         description: Forbidden – Customers only
- */
-router.post('/appointments', requireAuth, requireRole('client'), createAppointment);
 
 /**
  * @swagger

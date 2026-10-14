@@ -68,7 +68,7 @@ export const getUsersList = async (filters, page, limit) => {
         query = query.eq('status', filters.status);
     }
 
-    const { data, count, error } = await query.range(from, to).order('id', { ascending: false });
+    const { data, count, error } = await query.range(from, to).order('created_at', { ascending: false });
     if (error) throw error;
 
     if (data && data.length > 0) {
@@ -123,7 +123,7 @@ export const getPaymentsList = async (filters, page, limit) => {
     let query = supabase.from('orders').select('*', { count: 'exact' });
     if (filters.status) query = query.eq('status', filters.status);
 
-    const { data, count, error } = await query.range(from, to).order('id', { ascending: false });
+    const { data, count, error } = await query.range(from, to).order('created_at', { ascending: false });
     if (error) throw error;
     return { data, pagination: { page, limit, total: count, totalPages: Math.ceil(count / limit) } };
 };
@@ -177,7 +177,7 @@ export const getAuditLogs = async (filters, page, limit) => {
     const from = (page - 1) * limit;
     const to = from + limit - 1;
     let query = supabase.from('audit_logs').select('*', { count: 'exact' });
-    const { data, count, error } = await query.range(from, to).order('id', { ascending: false });
+    const { data, count, error } = await query.range(from, to).order('created_at', { ascending: false });
     if (error) {
         // Fallback gracefully if table doesn't exist to avoid 500
         if (error.code === '42P01' || error.code === 'PGRST205') return { data: [], pagination: { page, limit, total: 0, totalPages: 0 } };
