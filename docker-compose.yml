@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: aura-vida-backend
+    container_name: kusala-backend
     restart: unless-stopped
     ports:
       - "5000:5000"
@@ -12,8 +12,8 @@ services:
     environment:
       NODE_ENV: production
     networks:
-      - aura-vida-network
+      - kusala-network
 
 networks:
-  aura-vida-network:
+  kusala-network:
     driver: bridge
