@@ -6,6 +6,8 @@ import {
     adminUpdateSpace,
     updateSpaceStatus,
     deleteSpace,
+    packSpaceSlot,
+    releaseSpaceSlot,
 } from '../models/space.model.js';
 import { notifyAdmins } from '../models/notification.model.js';
 
@@ -153,3 +155,34 @@ export const adminListSpaces = async (req, res) => {
         res.status(500).json({ error: 'Failed to fetch spaces' });
     }
 };
+
+// POST /api/admin/spaces/:id/pack-slot — pack/reserve slot
+export const adminPackSpaceSlotController = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { date, start_time, end_time, reason, notify_owner } = req.body;
+
+        if (!date || !start_time || !end_time) {
+            return res.status(400).json({ error: 'date, start_time, and end_time are required.' });
+        }
+
+        const result = await packSpaceSlot(id, { date, start_time, end_time, reason, notify_owner });
+        res.status(201).json({ message: 'Slot successfully packed / reserved.', ...result });
+    } catch (err) {
+        console.error('adminPackSpaceSlotController error:', err);
+        res.status(err.statusCode || 500).json({ error: err.message || 'Failed to pack slot' });
+    }
+};
+
+// DELETE /api/admin/spaces/:id/packed-slots/:slotId — release slot
+export const adminReleaseSpaceSlotController = async (req, res) => {
+    try {
+        const { id, slotId } = req.params;
+        const updatedSpace = await releaseSpaceSlot(id, slotId);
+        res.status(200).json({ message: 'Slot successfully released.', space: updatedSpace });
+    } catch (err) {
+        console.error('adminReleaseSpaceSlotController error:', err);
+        res.status(err.statusCode || 500).json({ error: err.message || 'Failed to release slot' });
+    }
+};
+

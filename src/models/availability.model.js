@@ -1,5 +1,6 @@
 import { supabase } from '../config/supabase.js';
 import { istDayBoundsUtc, utcIsoToIstTime } from '../utils/timezone.js';
+import { parseSpaceAvailability, isSpaceOpenOnDate } from '../utils/spaceAvailability.js';
 
 // ─── AV-001: Get practitioner schedule (public) ───────────────────────────────
 export const getPractitionerSchedule = async (slug) => {
@@ -125,7 +126,7 @@ export const getExceptions = async (slug) => {
 };
 
 // ─── AV-005: Calculate available bookable time slots for a given date ──────────
-export const calculateAvailableSlots = async (slug, dateStr) => {
+export const calculateAvailableSlots = async (slug, dateStr, spaceId = null) => {
     const date = new Date(dateStr);
     const dayOfWeek = date.getUTCDay(); // 0=Sun ... 6=Sat
 
@@ -172,7 +173,7 @@ export const calculateAvailableSlots = async (slug, dateStr) => {
         return h * 60 + m;
     };
 
-    const slots = [];
+    let slots = [];
 
     for (const schedule of effectiveSchedules) {
         const schedStart = toMinutes(schedule.start_time.slice(0, 5));
@@ -204,6 +205,62 @@ export const calculateAvailableSlots = async (slug, dateStr) => {
             }
 
             current += duration;
+        }
+    }
+
+    // 5. If a partner space is selected (e.g. Center mode), intersect with space availability
+    if (spaceId) {
+        const { data: space } = await supabase
+            .from('partner_spaces')
+            .select('id, space_name, availability')
+            .eq('id', spaceId)
+            .maybeSingle();
+
+        if (space) {
+            const spaceSched = parseSpaceAvailability(space.availability);
+
+            // If the space is closed on this calendar date, no slots are available
+            if (!isSpaceOpenOnDate(dateStr, spaceSched)) {
+                return [];
+            }
+
+            // Fetch any bookings at this partner space for this day
+            const { data: spaceBookings } = await supabase
+                .from('bookings')
+                .select('scheduled_at, status, meeting_location')
+                .in('status', ['pending', 'confirmed'])
+                .gte('scheduled_at', dayStart)
+                .lte('scheduled_at', dayEnd);
+
+            const spaceBookedTimes = new Set(
+                (spaceBookings || [])
+                    .filter(b => b.meeting_location?.space_id === spaceId || b.meeting_location?.id === spaceId)
+                    .map(b => utcIsoToIstTime(b.scheduled_at))
+            );
+
+            const packedOnDate = (spaceSched.packed_slots || []).filter(ps => ps.date === dateStr);
+
+            const openMin = toMinutes(spaceSched.open_time || '00:00');
+            const closeMin = toMinutes(spaceSched.close_time || '23:59');
+
+            slots = slots.filter(slot => {
+                const slotStartMin = toMinutes(slot.start);
+                const slotEndMin = toMinutes(slot.end);
+
+                // Check 1: Must fall within space opening hours
+                if (slotStartMin < openMin || slotEndMin > closeMin) return false;
+
+                // Check 2: Space must not already have a booked appointment at this time
+                if (spaceBookedTimes.has(slot.start)) return false;
+
+                // Check 3: Must not overlap with any packed / reserved slot
+                const isPacked = packedOnDate.some(ps =>
+                    slotStartMin < toMinutes(ps.end_time) && slotEndMin > toMinutes(ps.start_time)
+                );
+                if (isPacked) return false;
+
+                return true;
+            });
         }
     }
 

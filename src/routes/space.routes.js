@@ -6,6 +6,8 @@ import {
     adminUpdateSpaceController,
     adminUpdateSpaceStatus,
     adminDeleteSpace,
+    adminPackSpaceSlotController,
+    adminReleaseSpaceSlotController,
 } from '../controllers/space.controller.js';
 import { requireAuth, requireRole } from '../middleware/auth.middleware.js';
 
@@ -191,5 +193,23 @@ router.patch('/admin/spaces/:id/status', requireAuth, requireRole('admin'), admi
  *         description: Not found
  */
 router.delete('/admin/spaces/:id', requireAuth, requireRole('admin'), adminDeleteSpace);
+
+/**
+  * @swagger
+  * /api/admin/spaces/{id}/pack-slot:
+  *   post:
+  *     summary: Admin - Pack / reserve a slot for a partner space
+  *     tags: [Spaces, Admin]
+  */
+router.post('/admin/spaces/:id/pack-slot', requireAuth, requireRole('admin'), adminPackSpaceSlotController);
+
+/**
+  * @swagger
+  * /api/admin/spaces/{id}/packed-slots/{slotId}:
+  *   delete:
+  *     summary: Admin - Release a previously packed slot
+  *     tags: [Spaces, Admin]
+  */
+router.delete('/admin/spaces/:id/packed-slots/:slotId', requireAuth, requireRole('admin'), adminReleaseSpaceSlotController);
 
 export default router;

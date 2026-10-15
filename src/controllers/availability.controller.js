@@ -160,11 +160,11 @@ export const adminCreateTimeOff = async (req, res) => {
 // ─── AV-006: Calculate bookable slots ──────────────────────────────────────────
 export const getAvailableSlots = async (req, res) => {
     try {
-        const { date, slug } = req.query; // AV-006 uses query params for slug
+        const { date, slug, spaceId } = req.query; // AV-006 uses query params for slug & optional spaceId
         if (!date || !slug)
             return res.status(400).json({ error: 'Query params ?date=YYYY-MM-DD and ?slug=... are required.' });
 
-        const slots = await calculateAvailableSlots(slug, date);
+        const slots = await calculateAvailableSlots(slug, date, spaceId || null);
         res.status(200).json({ date, slots });
     } catch (err) {
         console.error('getAvailableSlots error:', err);

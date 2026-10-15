@@ -183,7 +183,14 @@ export const forgotPassword = async (req, res) => {
         const { email } = req.body;
         if (!email) return res.status(400).json({ error: 'Email is required' });
 
-        const { error } = await supabaseAuth.auth.resetPasswordForEmail(email);
+        const normalizedEmail = String(email).trim().toLowerCase();
+        const origin = req.headers.origin || (req.headers.referer ? new URL(req.headers.referer).origin : null);
+        const frontendUrl = origin || process.env.FRONTEND_URL || process.env.SITE_URL || 'http://localhost:5173';
+        const redirectTo = `${frontendUrl}/reset-password?email=${encodeURIComponent(normalizedEmail)}`;
+
+        const { error } = await supabaseAuth.auth.resetPasswordForEmail(normalizedEmail, {
+            redirectTo
+        });
 
         if (error) {
             return res.status(400).json({ error: error.message });

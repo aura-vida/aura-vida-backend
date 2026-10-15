@@ -1,4 +1,14 @@
 import { supabase } from '../config/supabase.js';
+import { parseSpaceAvailability, formatSpaceScheduleSummary } from '../utils/spaceAvailability.js';
+import { sendSpaceReservationEmail } from '../services/email.service.js';
+
+const sanitizeSpaceFields = (fields) => {
+    const sanitized = { ...fields };
+    if (sanitized.availability && typeof sanitized.availability === 'object') {
+        sanitized.availability = JSON.stringify(sanitized.availability);
+    }
+    return sanitized;
+};
 
 /**
  * Create a new partner space submission (public)
@@ -6,7 +16,7 @@ import { supabase } from '../config/supabase.js';
 export const createSpace = async (fields) => {
     const { data, error } = await supabase
         .from('partner_spaces')
-        .insert([fields])
+        .insert([sanitizeSpaceFields(fields)])
         .select()
         .single();
 
@@ -25,7 +35,7 @@ export const listPublicSpaces = async (pin) => {
         // 1. Exact match
         const { data: exact, error: exactErr } = await supabase
             .from('partner_spaces')
-            .select('id, space_name, address, city, pin, capacity, space_type, amenities, notes, status')
+            .select('id, space_name, address, city, pin, capacity, space_type, amenities, availability, notes, status')
             .eq('pin', pin)
             .in('status', ['approved', 'contacted', 'new']);
 
@@ -35,7 +45,7 @@ export const listPublicSpaces = async (pin) => {
         const prefix3 = pin.slice(0, 3);
         const { data: regional3 } = await supabase
             .from('partner_spaces')
-            .select('id, space_name, address, city, pin, capacity, space_type, amenities, notes, status')
+            .select('id, space_name, address, city, pin, capacity, space_type, amenities, availability, notes, status')
             .ilike('pin', `${prefix3}%`)
             .in('status', ['approved', 'contacted', 'new']);
 
@@ -45,7 +55,7 @@ export const listPublicSpaces = async (pin) => {
         const prefix2 = pin.slice(0, 2);
         const { data: regional2 } = await supabase
             .from('partner_spaces')
-            .select('id, space_name, address, city, pin, capacity, space_type, amenities, notes, status')
+            .select('id, space_name, address, city, pin, capacity, space_type, amenities, availability, notes, status')
             .ilike('pin', `${prefix2}%`)
             .in('status', ['approved', 'contacted', 'new']);
 
@@ -55,7 +65,7 @@ export const listPublicSpaces = async (pin) => {
     // 3. Fallback: return all active partner spaces
     const { data: allSpaces, error } = await supabase
         .from('partner_spaces')
-        .select('id, space_name, address, city, pin, capacity, space_type, amenities, notes, status')
+        .select('id, space_name, address, city, pin, capacity, space_type, amenities, availability, notes, status')
         .in('status', ['approved', 'contacted', 'new'])
         .limit(10);
 
@@ -94,11 +104,12 @@ export const listSpaces = async (filters = {}) => {
  * Admin: Create a new partner space directly
  */
 export const adminCreateSpace = async (fields) => {
+    const sanitized = sanitizeSpaceFields(fields);
     const { data, error } = await supabase
         .from('partner_spaces')
         .insert([{
-            ...fields,
-            status: fields.status || 'approved',
+            ...sanitized,
+            status: sanitized.status || 'approved',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
         }])
@@ -113,10 +124,11 @@ export const adminCreateSpace = async (fields) => {
  * Admin: Update all details of a partner space
  */
 export const adminUpdateSpace = async (id, fields) => {
+    const sanitized = sanitizeSpaceFields(fields);
     const { data, error } = await supabase
         .from('partner_spaces')
         .update({
-            ...fields,
+            ...sanitized,
             updated_at: new Date().toISOString(),
         })
         .eq('id', id)
@@ -159,4 +171,101 @@ export const deleteSpace = async (id) => {
     if (!data) throw Object.assign(new Error('Space submission not found'), { statusCode: 404 });
     return data;
 };
+
+/**
+ * Admin: Pack / Reserve a time slot for a space and optionally notify the space owner
+ */
+export const packSpaceSlot = async (id, { date, start_time, end_time, reason = '', notify_owner = false }) => {
+    // 1. Fetch space
+    const { data: space, error: fetchErr } = await supabase
+        .from('partner_spaces')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+
+    if (fetchErr) throw fetchErr;
+    if (!space) throw Object.assign(new Error('Partner space not found'), { statusCode: 404 });
+
+    // 2. Parse current availability
+    const schedule = parseSpaceAvailability(space.availability);
+    const packedSlots = Array.isArray(schedule.packed_slots) ? [...schedule.packed_slots] : [];
+
+    // 3. Create new packed slot
+    const newSlot = {
+        id: `slot_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        date,
+        start_time: start_time.slice(0, 5),
+        end_time: end_time.slice(0, 5),
+        reason: reason.trim(),
+        notify_owner: !!notify_owner,
+        created_at: new Date().toISOString(),
+        notified_email: notify_owner && space.email ? space.email : null,
+    };
+
+    packedSlots.push(newSlot);
+    schedule.packed_slots = packedSlots;
+
+    // 4. Update space
+    const { data: updated, error: updateErr } = await supabase
+        .from('partner_spaces')
+        .update({
+            availability: JSON.stringify(schedule),
+            updated_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .select()
+        .single();
+
+    if (updateErr) throw updateErr;
+
+    // 5. Send notification email if requested
+    if (notify_owner && space.email) {
+        sendSpaceReservationEmail({
+            to: space.email,
+            spaceName: space.space_name,
+            date,
+            startTime: newSlot.start_time,
+            endTime: newSlot.end_time,
+            reason: newSlot.reason,
+        }).catch((err) => {
+            console.error('Failed to send reservation email to space host:', err.message);
+        });
+    }
+
+    return { space: updated, packed_slot: newSlot };
+};
+
+/**
+ * Admin: Release a previously packed/reserved slot
+ */
+export const releaseSpaceSlot = async (id, slotId) => {
+    // 1. Fetch space
+    const { data: space, error: fetchErr } = await supabase
+        .from('partner_spaces')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+
+    if (fetchErr) throw fetchErr;
+    if (!space) throw Object.assign(new Error('Partner space not found'), { statusCode: 404 });
+
+    // 2. Parse current availability and filter out slot
+    const schedule = parseSpaceAvailability(space.availability);
+    schedule.packed_slots = (schedule.packed_slots || []).filter((s) => s.id !== slotId);
+
+    // 3. Update space
+    const { data: updated, error: updateErr } = await supabase
+        .from('partner_spaces')
+        .update({
+            availability: JSON.stringify(schedule),
+            updated_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .select()
+        .single();
+
+    if (updateErr) throw updateErr;
+    return updated;
+};
+
 
