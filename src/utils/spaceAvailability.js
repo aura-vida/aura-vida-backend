@@ -6,8 +6,16 @@ export const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export const toMinutes = (timeStr) => {
     if (!timeStr) return 0;
-    const [h, m] = timeStr.slice(0, 5).split(':').map(Number);
-    return (h || 0) * 60 + (m || 0);
+    const str = String(timeStr).trim();
+    const isPm = /pm/i.test(str);
+    const isAm = /am/i.test(str);
+    const cleaned = str.replace(/[^0-9:]/g, '');
+    const [hRaw, mRaw] = cleaned.split(':').map(Number);
+    let hour = hRaw || 0;
+    const min = mRaw || 0;
+    if (isPm && hour < 12) hour += 12;
+    if (isAm && hour === 12) hour = 0;
+    return hour * 60 + min;
 };
 
 export const formatTime12h = (timeStr) => {
