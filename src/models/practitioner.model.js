@@ -351,7 +351,16 @@ export const getOwnPractitionerProfile = async (practitionerSlug) => {
  * Practitioners cannot change their slug, sort_order, is_published, or bookable status.
  */
 export const updateOwnPractitionerProfile = async (practitionerSlug, fields) => {
-    const allowedFields = ['name', 'bio', 'city', 'craft', 'price_inr', 'image_url', 'calendly_link', 'base_lat', 'base_lng', 'base_address', 'pincode', 'keywords', 'mobile_number', 'whatsapp_number'];
+    const allowedFields = [
+        'name', 'bio', 'city', 'craft', 'price_inr', 'image_url', 'calendly_link',
+        'base_lat', 'base_lng', 'base_address', 'pincode', 'keywords', 'mobile_number', 'whatsapp_number',
+        'offers_centre', 'offers_host', 'offers_online', 'offers_studio',
+        'studio_name', 'studio_address', 'studio_city', 'studio_maps_url',
+        'price_studio_private', 'price_studio_group',
+        'price_online_private', 'price_online_group',
+        'price_centre_private', 'price_centre_group',
+        'price_host_private', 'price_host_group'
+    ];
     const sanitized = {};
     for (const key of allowedFields) {
         if (fields[key] !== undefined) sanitized[key] = fields[key];

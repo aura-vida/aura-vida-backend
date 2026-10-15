@@ -54,15 +54,37 @@ export const createOrder = async (req, res) => {
             getProfileName(req.user.id),
         ]);
 
-        // 2. Compute amount (base + 60% extra per additional group member), in paise.
-        // Price is always driven by the PRACTITIONER's own rate, not the chosen
-        // service's catalog price — services aren't priced per-practitioner, so
-        // using service.price_inr would charge whatever the selected service
-        // happens to cost globally instead of what this practitioner charges.
-        const baseInr = practitioner.price_inr || 0;
-        const extraRate = 0.6;
+        // 2. Compute amount based on selected mode (studio, online, centre, host) and group size.
         const size = Math.max(1, group_size || 1);
-        const originalSubtotalInr = baseInr + Math.round(baseInr * extraRate) * Math.max(0, size - 1);
+        const normalizedMode = (mode || '').toLowerCase();
+        let privatePrice = 0;
+        let groupPricePerPerson = 0;
+
+        if (normalizedMode === 'studio') {
+            privatePrice = Number(practitioner.price_studio_private) || 0;
+            groupPricePerPerson = Number(practitioner.price_studio_group) || 0;
+        } else if (normalizedMode === 'online') {
+            privatePrice = Number(practitioner.price_online_private) || 0;
+            groupPricePerPerson = Number(practitioner.price_online_group) || 0;
+        } else if (normalizedMode === 'centre') {
+            privatePrice = Number(practitioner.price_centre_private) || 0;
+            groupPricePerPerson = Number(practitioner.price_centre_group) || 0;
+        } else if (normalizedMode === 'host') {
+            privatePrice = Number(practitioner.price_host_private) || 0;
+            groupPricePerPerson = Number(practitioner.price_host_group) || 0;
+        }
+
+        let originalSubtotalInr = 0;
+        if (size > 1 && groupPricePerPerson > 0) {
+            originalSubtotalInr = groupPricePerPerson * size;
+        } else if (size === 1 && privatePrice > 0) {
+            originalSubtotalInr = privatePrice;
+        } else if (size > 1 && privatePrice > 0) {
+            originalSubtotalInr = privatePrice + Math.round(privatePrice * 0.6) * (size - 1);
+        } else {
+            const fallbackInr = practitioner.price_inr || 0;
+            originalSubtotalInr = fallbackInr + Math.round(fallbackInr * 0.6) * Math.max(0, size - 1);
+        }
 
         // Admin-managed coupon (see coupon.model.js) — eligibility rules
         // (first-booking-only, minimum booking amount) re-validated here
