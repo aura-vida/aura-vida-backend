@@ -14,7 +14,41 @@ export const listPractitionerReviews = async (practitionerId, page, limit) => {
     return { data, pagination: { page, limit, total: count, totalPages: Math.ceil(count / limit) } };
 };
 
+/**
+ * A customer may only review a practitioner once they've actually had a
+ * session with them — a paid-but-upcoming ("confirmed") booking doesn't
+ * count yet, only one marked "completed".
+ */
+const hasUsedPractitionerServices = async (clientId, practitionerId) => {
+    const { data: practitioner, error: pracErr } = await supabase
+        .from('practitioners')
+        .select('slug')
+        .eq('id', practitionerId)
+        .maybeSingle();
+    if (pracErr) throw pracErr;
+    if (!practitioner) {
+        throw Object.assign(new Error('Practitioner not found.'), { statusCode: 404 });
+    }
+
+    const { count, error } = await supabase
+        .from('bookings')
+        .select('id', { count: 'exact', head: true })
+        .eq('client_id', clientId)
+        .eq('practitioner_slug', practitioner.slug)
+        .eq('status', 'completed');
+    if (error) throw error;
+    return (count || 0) > 0;
+};
+
 export const createReview = async (fields) => {
+    const eligible = await hasUsedPractitionerServices(fields.client_id, fields.practitioner_id);
+    if (!eligible) {
+        throw Object.assign(
+            new Error('You can only review a practitioner after booking a session with them.'),
+            { statusCode: 403 }
+        );
+    }
+
     const { data, error } = await supabase
         .from('reviews')
         .insert([{ ...fields, status: 'pending' }])

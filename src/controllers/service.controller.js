@@ -1,9 +1,10 @@
 import {
     listServices,
+    adminListServices,
     getServiceById,
     createService,
     updateServiceById,
-    deactivateService,
+    deleteServicePermanently,
 } from '../models/service.model.js';
 import { uploadToSupabase } from '../middleware/upload.middleware.js';
 
@@ -14,6 +15,17 @@ export const getServices = async (req, res) => {
         res.status(200).json({ services: data, pagination });
     } catch (err) {
         console.error('getServices error:', err);
+        res.status(500).json({ error: 'Failed to fetch services' });
+    }
+};
+
+// Admin: list all services (active + hidden)
+export const getAdminServices = async (req, res) => {
+    try {
+        const { data, pagination } = await adminListServices(req.query);
+        res.status(200).json({ services: data, pagination });
+    } catch (err) {
+        console.error('getAdminServices error:', err);
         res.status(500).json({ error: 'Failed to fetch services' });
     }
 };
@@ -69,7 +81,13 @@ export const adminUpdateService = async (req, res) => {
         if (fields.duration_min) fields.duration_min = parseInt(fields.duration_min);
         if (fields.price_inr) fields.price_inr = parseFloat(fields.price_inr);
         if (fields.sort_order) fields.sort_order = parseInt(fields.sort_order);
-        if (fields.is_active !== undefined) fields.is_active = fields.is_active === 'true';
+        // is_active arrives as a real boolean on a plain JSON request, but as
+        // the string "true"/"false" on multipart/form-data — `=== 'true'`
+        // alone would silently turn every JSON boolean (true included) into
+        // false, since `true === 'true'` is false.
+        if (fields.is_active !== undefined) {
+            fields.is_active = typeof fields.is_active === 'string' ? fields.is_active === 'true' : !!fields.is_active;
+        }
 
         // If a new image was uploaded, push to Supabase Storage
         if (req.file) {
@@ -88,8 +106,8 @@ export const adminUpdateService = async (req, res) => {
 // SERVICE-005
 export const adminDeleteService = async (req, res) => {
     try {
-        await deactivateService(req.params.id);
-        res.status(200).json({ message: 'Service deactivated successfully' });
+        await deleteServicePermanently(req.params.id);
+        res.status(200).json({ message: 'Service deleted successfully' });
     } catch (err) {
         console.error('adminDeleteService error:', err);
         const status = err.statusCode || 500;

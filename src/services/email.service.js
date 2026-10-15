@@ -58,7 +58,7 @@ export const sendEmail = async ({ to, subject, html }) => {
     try {
         const mailTransporter = await initTransporter();
         const info = await mailTransporter.sendMail({
-            from: '"Aura Vida" <hello@auravida.com>', // sender address
+            from: '"Kusala" <hello@auravida.com>', // sender address
             to: Array.isArray(to) ? to.join(', ') : to, // list of receivers
             subject,
             html,

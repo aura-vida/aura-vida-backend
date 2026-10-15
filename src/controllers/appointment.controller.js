@@ -3,6 +3,13 @@ import { getPractitionerBySlug } from '../models/practitioner.model.js';
 import { createNotification, notifyAdmins } from '../models/notification.model.js';
 import { istToUtcIso } from '../utils/timezone.js';
 
+// A customer may only self-cancel within this many hours of when the booking
+// was actually created (i.e. when payment was confirmed) — not the session's
+// scheduled time. Practitioners/admins are exempt (see cancelAppointment).
+// Keep in sync with CUSTOMER_CANCEL_WINDOW_HOURS in kusala-connect/src/pages/Account.tsx.
+const CUSTOMER_CANCEL_WINDOW_HOURS = 4;
+const CUSTOMER_CANCEL_WINDOW_MS = CUSTOMER_CANCEL_WINDOW_HOURS * 60 * 60 * 1000;
+
 // ─── APT-002: List My Appointments (Customer) ────────────────────────────────
 export const listMyAppointments = async (req, res) => {
     try {
@@ -183,6 +190,11 @@ export const cancelAppointment = async (req, res) => {
         // ---------------------------------------------------------
         let isAuthorized = booking.client_id === req.user.id;
 
+        // Only a plain customer cancelling their own booking is subject to
+        // the 4-hour window below — practitioners and admins can always
+        // cancel, regardless of how long ago the booking was made.
+        const isCustomerSelfCancel = isAuthorized && req.user.role === 'client';
+
         // Admin can cancel any appointment
         if (req.user.role === 'admin') {
             isAuthorized = true;
@@ -229,16 +241,51 @@ export const cancelAppointment = async (req, res) => {
         }
 
         // ---------------------------------------------------------
+        // 4-hour self-cancellation window (customers only)
+        // Measured from when the booking was actually created (i.e. payment
+        // confirmed) — not the scheduled session time — using plain UTC
+        // epoch math, so it's unaffected by timezone.
+        // ---------------------------------------------------------
+        if (isCustomerSelfCancel) {
+            const createdAtMs = new Date(booking.created_at).getTime();
+            const elapsedMs = Date.now() - createdAtMs;
+            if (elapsedMs > CUSTOMER_CANCEL_WINDOW_MS) {
+                return res.status(400).json({
+                    error: `This appointment can no longer be cancelled — the ${CUSTOMER_CANCEL_WINDOW_HOURS}-hour cancellation window after booking has expired. Please contact support for assistance.`,
+                    cancelWindowExpired: true,
+                });
+            }
+        }
+
+        // ---------------------------------------------------------
         // Cancel booking
+        // The `.in('status', ...)` guard makes this atomic: if two requests
+        // race (duplicate clicks, or a concurrent practitioner/admin
+        // cancellation), only the first to commit actually flips the status —
+        // the second finds zero matching rows instead of double-cancelling.
         // ---------------------------------------------------------
         const { data, error } = await supabase
             .from('bookings')
             .update({ status: 'cancelled' })
             .eq('id', req.params.id)
+            .in('status', ['pending', 'confirmed'])
             .select()
-            .single();
+            .maybeSingle();
 
         if (error) throw error;
+
+        if (!data) {
+            const { data: current } = await supabase
+                .from('bookings')
+                .select('status')
+                .eq('id', req.params.id)
+                .maybeSingle();
+            return res.status(400).json({
+                error: current
+                    ? `Cannot cancel a booking that is already '${current.status}'.`
+                    : 'Appointment not found.',
+            });
+        }
 
         // ---------------------------------------------------------
         // Auto-refund

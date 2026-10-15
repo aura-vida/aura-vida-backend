@@ -13,7 +13,7 @@ import { istToUtcIso } from '../utils/timezone.js';
 import { resolveCoupon } from '../models/coupon.model.js';
 
 // Flat tax applied to the session subtotal, client-requested for now.
-// Keep in sync with SESSION_TAX_RATE in aura-vida-connect/src/lib/pricing.ts
+// Keep in sync with SESSION_TAX_RATE in kusala-connect/src/lib/pricing.ts
 // (that copy is display-only — this is the authoritative one).
 export const SESSION_TAX_RATE = 0.05;
 
@@ -128,7 +128,7 @@ export const createOrder = async (req, res) => {
             discountPercent,
             discountInr,
             serviceId: service_id,
-            serviceName: service.name || 'Aura Vida Session',
+            serviceName: service.name || 'Kusala Session',
             groupSize: size,
             customer: {
                 name: profile?.full_name || clientName || '',

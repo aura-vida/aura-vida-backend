@@ -178,6 +178,54 @@ export const verifyOtp = async (req, res) => {
     }
 };
 
+/**
+ * Verifies a magic-link token_hash and returns a real session — used by the
+ * frontend's /magic-login page. Deliberately NOT triggered by just loading a
+ * link: email clients and security gateways (Outlook Safe Links, Gmail's
+ * link proxy, antivirus scanners) often "pre-visit" links in emails before
+ * the user ever clicks, which would silently burn a one-time Supabase
+ * action_link if we emailed that directly. This endpoint instead takes a
+ * raw token_hash that only gets consumed when the user explicitly clicks a
+ * button on our own page.
+ */
+export const verifyMagicLink = async (req, res) => {
+    try {
+        const { token_hash } = req.body;
+        if (!token_hash) return res.status(400).json({ error: 'token_hash is required' });
+
+        const { data, error } = await supabaseAuth.auth.verifyOtp({
+            token_hash,
+            type: 'magiclink',
+        });
+
+        if (error) {
+            return res.status(401).json({ error: error.message });
+        }
+
+        let userProfile = null;
+        if (data.user) {
+            try {
+                userProfile = await getUserProfile(data.user.id);
+            } catch (err) { }
+        }
+
+        if (userProfile && userProfile.status === 'inactive') {
+            return res.status(403).json({
+                error: 'Your account has been deactivated by an administrator. Please contact Kuśala support.'
+            });
+        }
+
+        res.status(200).json({
+            message: 'Logged in successfully',
+            user: { ...data.user, profile: userProfile },
+            session: data.session
+        });
+    } catch (error) {
+        console.error('verifyMagicLink error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+};
+
 export const forgotPassword = async (req, res) => {
     try {
         const { email } = req.body;

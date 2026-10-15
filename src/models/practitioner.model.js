@@ -1,5 +1,15 @@
+import crypto from 'crypto';
 import { supabase } from '../config/supabase.js';
 import { isValidPhoneNumber } from '../utils/validation.js';
+import { sendEmail } from '../services/email.service.js';
+
+// Avoids visually ambiguous characters (0/O, 1/l/I) since this gets typed by hand.
+const TEMP_PASSWORD_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+const generateTempPassword = () => {
+    let pwd = '';
+    for (let i = 0; i < 10; i++) pwd += TEMP_PASSWORD_CHARS[crypto.randomInt(TEMP_PASSWORD_CHARS.length)];
+    return `${pwd}!`; // guarantees a symbol, comfortably clears any password-strength policy
+};
 
 // ─── Public ──────────────────────────────────────────────────────────────────
 
@@ -124,30 +134,32 @@ export const getPractitionerById = async (id) => {
 };
 
 /**
- * Creates the actual login for a practitioner: a Supabase Auth user (which
- * sends them an invite email to set their password), a `profiles` row linked
- * to their practitioner slug, and the `practitioner` role. Shared by both
- * `createPractitioner` (admin direct-create) and `approvePractitioner`
+ * Creates the actual login for a practitioner: a Supabase Auth user with a
+ * real temporary password (so they can log in immediately), a `profiles` row
+ * linked to their practitioner slug, and the `practitioner` role. Also emails
+ * them the temporary password plus a "Reset your password" link. Shared by
+ * both `createPractitioner` (admin direct-create) and `approvePractitioner`
  * (apply-flow) so the two paths never drift apart.
  */
 const createPractitionerAccount = async ({ slug, name, email }) => {
-    const { data: authData, error: authErr } = await supabase.auth.admin.inviteUserByEmail(
-        email,
-        {
-            data: { role: 'practitioner', practitioner_slug: slug },
-            redirectTo: `${process.env.SITE_URL || 'http://localhost:8080'}/practitioner`,
-        }
-    );
+    const siteUrl = process.env.SITE_URL || 'http://localhost:8080';
+    const tempPassword = generateTempPassword();
 
-    if (authErr) {
-        // If user already exists just continue
-        if (!authErr.message?.includes('already been registered')) throw authErr;
-    }
+    const { data: authData, error: authErr } = await supabase.auth.admin.createUser({
+        email,
+        password: tempPassword,
+        email_confirm: true,
+        user_metadata: { role: 'practitioner', practitioner_slug: slug },
+    });
 
     let authUserId = authData?.user?.id;
+    let isNewAccount = true;
 
-    // If user already existed, inviteUserByEmail fails but we can get their ID via generateLink
-    if (!authUserId) {
+    if (authErr) {
+        // If user already exists just continue — their real password stays
+        // untouched, so no temp-password email goes out for this case.
+        if (!authErr.message?.includes('already been registered')) throw authErr;
+        isNewAccount = false;
         const { data: linkData } = await supabase.auth.admin.generateLink({
             type: 'magiclink',
             email,
@@ -177,6 +189,68 @@ const createPractitionerAccount = async ({ slug, name, email }) => {
         }
     }
 
+    if (isNewAccount && authUserId) {
+        // Magic link: points at our own /magic-login page with the raw
+        // token_hash, NOT Supabase's action_link directly. Emailing the
+        // action_link is unreliable — email clients and security gateways
+        // (Outlook Safe Links, Gmail's link proxy, antivirus scanners) often
+        // pre-fetch links in emails before the user clicks, which silently
+        // burns a one-time magic link. /magic-login only consumes the token
+        // on an explicit button click (see verifyMagicLink in
+        // auth.controller.js), so pre-fetching is harmless.
+        let magicLinkUrl = null;
+        try {
+            const { data: magicData, error: magicErr } = await supabase.auth.admin.generateLink({
+                type: 'magiclink',
+                email,
+            });
+            if (!magicErr && magicData?.properties?.hashed_token) {
+                magicLinkUrl = `${siteUrl}/magic-login?token_hash=${magicData.properties.hashed_token}&redirect=/practitioner`;
+            }
+        } catch (magicGenErr) {
+            console.error('Failed to generate practitioner magic link:', magicGenErr);
+        }
+
+        // Reset password: deliberately NOT a pre-generated recovery token.
+        // Supabase keeps only one live email-action token per user at a
+        // time, so generating a 'recovery' link here would silently
+        // invalidate the 'magiclink' token generated just above (confirmed
+        // live — the second generateLink() call kills the first one
+        // regardless of type). Instead, this links to the app's own
+        // self-service "forgot password" form, pre-filled with their email —
+        // the actual recovery token only gets generated on demand when they
+        // click "Send reset link" there, so it can never collide.
+        const resetUrl = `${siteUrl}/auth?view=forgot&email=${encodeURIComponent(email)}`;
+
+        await sendEmail({
+            to: email,
+            subject: 'Your Kusala Practitioner account is ready',
+            html: `
+              <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:32px;border-radius:16px;border:1px solid #e5e7eb;">
+                <h1 style="font-size:22px;color:#1a5c38;margin-bottom:4px;">Welcome to Kusala, ${name}</h1>
+                <p style="color:#555;margin-top:0;">An account has been created for you on the Kusala Guide Portal.</p>
+                ${magicLinkUrl ? `
+                <a href="${magicLinkUrl}" style="display:inline-block;margin-top:12px;padding:12px 28px;background:#1a5c38;color:#fff;text-decoration:none;border-radius:999px;font-weight:600;font-size:14px;">Log In Instantly</a>
+                <p style="color:#888;font-size:12px;margin:10px 0 0;">One-click login, no password needed. This link can only be used once.</p>
+                <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;">
+                ` : ''}
+                <p style="color:#555;">Prefer to log in manually? Use this temporary password:</p>
+                <div style="background:#f3f7f4;border-radius:12px;padding:16px 20px;margin:12px 0 20px;">
+                  <p style="margin:0;font-size:12px;color:#888;text-transform:uppercase;letter-spacing:0.05em;">Email</p>
+                  <p style="margin:4px 0 12px;font-size:15px;color:#111;">${email}</p>
+                  <p style="margin:0;font-size:12px;color:#888;text-transform:uppercase;letter-spacing:0.05em;">Temporary Password</p>
+                  <p style="margin:4px 0 0;font-size:18px;font-family:monospace;font-weight:700;color:#111;letter-spacing:0.03em;">${tempPassword}</p>
+                </div>
+                <p style="color:#555;">For security, please set your own password as soon as you log in.</p>
+                <a href="${resetUrl}" style="display:inline-block;margin-top:8px;padding:12px 28px;background:#fff;color:#1a5c38;text-decoration:none;border-radius:999px;font-weight:600;font-size:14px;border:1.5px solid #1a5c38;">Reset Your Password</a>
+                <p style="color:#888;font-size:12px;margin:10px 0 0;">Takes you to a form to request a reset link by email.</p>
+                <hr style="border:none;border-top:1px solid #e5e7eb;margin:28px 0 16px;">
+                <p style="font-size:12px;color:#aaa;">Kusala &bull; Questions? Reply to this email or visit auravida.com</p>
+              </div>
+            `,
+        });
+    }
+
     return authUserId;
 };
 
@@ -188,7 +262,9 @@ const createPractitionerAccount = async ({ slug, name, email }) => {
  * be a directory listing only, with no way to ever log into the Guide Portal.
  */
 export const createPractitioner = async (fields) => {
-    const { email, mobile_number, whatsapp_number, name, ...rest } = fields;
+    // rating is system-computed from customer reviews — never admin-settable,
+    // even on creation.
+    const { email, mobile_number, whatsapp_number, name, rating, ...rest } = fields;
 
     if (!name || !String(name).trim()) {
         const err = new Error('Name is required.');
@@ -396,7 +472,7 @@ export const updateOwnPractitionerProfile = async (practitionerSlug, fields) => 
  */
 export const applyPractitioner = async (fields) => {
     const {
-        name, email, bio, craft, city, rating, sessions, price_inr,
+        name, email, bio, craft, city, sessions, price_inr,
         mobile_number, whatsapp_number,
     } = fields;
 
@@ -429,7 +505,8 @@ export const applyPractitioner = async (fields) => {
             bio: bio?.trim() || null,
             craft: craft?.trim() || null,
             city: city?.trim() || null,
-            rating: parseFloat(rating) || 5,
+            // rating is never accepted from a client/applicant — it starts at
+            // the DB default (0) and is only ever set by the review trigger.
             sessions: parseInt(sessions) || 0,
             price_inr: parseInt(price_inr) || 0,
             mobile_number: mobile_number.trim(),

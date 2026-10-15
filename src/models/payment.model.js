@@ -142,7 +142,7 @@ const sendPaymentReceiptEmail = async (order, paymentId) => {
     const { sendEmail } = await import('../services/email.service.js');
     await sendEmail({
         to: order.customer_email,
-        subject: `Your Aura Vida Payment Receipt — ₹${amountInr}`,
+        subject: `Your Kusala Payment Receipt — ₹${amountInr}`,
         html: `
           <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:32px;border-radius:16px;border:1px solid #e5e7eb;">
             <h1 style="font-size:22px;color:#1a5c38;margin-bottom:4px;">Payment Receipt</h1>
@@ -151,7 +151,7 @@ const sendPaymentReceiptEmail = async (order, paymentId) => {
             <table style="width:100%;font-size:14px;color:#333;border-collapse:collapse;">
               <tr><td style="padding:8px 0;color:#888;">Receipt No.</td><td style="padding:8px 0;font-weight:600;text-align:right;">${payment.id}</td></tr>
               <tr><td style="padding:8px 0;color:#888;">Order ID</td><td style="padding:8px 0;font-weight:600;text-align:right;">${order.razorpay_order_id}</td></tr>
-              <tr><td style="padding:8px 0;color:#888;">Item</td><td style="padding:8px 0;font-weight:600;text-align:right;">${order.item_name || 'Aura Vida Session'}</td></tr>
+              <tr><td style="padding:8px 0;color:#888;">Item</td><td style="padding:8px 0;font-weight:600;text-align:right;">${order.item_name || 'Kusala Session'}</td></tr>
               <tr><td style="padding:8px 0;color:#888;">Date</td><td style="padding:8px 0;font-weight:600;text-align:right;">${paidAt} IST</td></tr>
               <tr><td style="padding:8px 0;color:#888;">Payment Method</td><td style="padding:8px 0;font-weight:600;text-align:right;">${methodLabel}${methodDetail}</td></tr>
               <tr><td style="padding:8px 0;color:#888;">Status</td><td style="padding:8px 0;font-weight:600;text-align:right;color:#1a5c38;">Paid</td></tr>
@@ -167,7 +167,7 @@ const sendPaymentReceiptEmail = async (order, paymentId) => {
               <tr><td style="padding:8px 0;font-weight:700;">Total Paid</td><td style="padding:8px 0;font-weight:700;text-align:right;">₹${amountInr}</td></tr>
             </table>
             <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0;">
-            <p style="font-size:12px;color:#aaa;">This is an automated receipt for your records. Aura Vida &bull; Questions? Reply to this email or visit auravida.com</p>
+            <p style="font-size:12px;color:#aaa;">This is an automated receipt for your records. Kusala &bull; Questions? Reply to this email or visit auravida.com</p>
           </div>
         `,
     });
@@ -261,7 +261,7 @@ export const markOrderPaidAndConfirmBooking = async (orderId, paymentId) => {
                 // Dynamically import to avoid top-level issues if the file misses env vars globally
                 const { createMeetEvent } = await import('../services/calendar.service.js');
                 const meetRes = await createMeetEvent({
-                    summary: `Aura Vida Session: ${order.item_name || ''}`,
+                    summary: `Kusala Session: ${order.item_name || ''}`,
                     description: `Booking Reference: ${bookingId || orderId}`,
                     startTime: new Date(booking.scheduled_at),
                     attendeeEmails: [order.customer_email].filter(Boolean)
@@ -427,21 +427,21 @@ export const markOrderPaidAndConfirmBooking = async (orderId, paymentId) => {
                 const emailPromises = allRecipients.map(({ name, email }) =>
                     sendEmail({
                         to: email,
-                        subject: `Your Aura Vida Session is Confirmed ✨`,
+                        subject: `Your Kusala Session is Confirmed ✨`,
                         html: `
                           <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:32px;border-radius:16px;border:1px solid #e5e7eb;">
                             <h1 style="font-size:24px;color:#1a5c38;margin-bottom:4px;">Session Confirmed!</h1>
                             <p style="color:#555;margin-top:0;">Hi ${name || 'there'} 👋, your booking has been confirmed and payment received.</p>
                             <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0;">
                             <table style="width:100%;font-size:14px;color:#333;">
-                              <tr><td style="padding:8px 0;color:#888;">Service</td><td style="padding:8px 0;font-weight:600;">${order.item_name || 'Aura Vida Session'}</td></tr>
+                              <tr><td style="padding:8px 0;color:#888;">Service</td><td style="padding:8px 0;font-weight:600;">${order.item_name || 'Kusala Session'}</td></tr>
                               <tr><td style="padding:8px 0;color:#888;">Date &amp; Time</td><td style="padding:8px 0;font-weight:600;">${scheduledDate} IST</td></tr>
                               <tr><td style="padding:8px 0;color:#888;">Mode</td><td style="padding:8px 0;font-weight:600;">${booking?.mode || 'session'}</td></tr>
                               ${booking?.group_size > 1 ? `<tr><td style="padding:8px 0;color:#888;">Group size</td><td style="padding:8px 0;font-weight:600;">${booking.group_size} people</td></tr>` : ''}
                             </table>
                             ${meetSection}
                             <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0;">
-                            <p style="font-size:12px;color:#aaa;">Aura Vida &bull; Questions? Reply to this email or visit auravida.com</p>
+                            <p style="font-size:12px;color:#aaa;">Kusala &bull; Questions? Reply to this email or visit auravida.com</p>
                           </div>
                         `,
                     })

@@ -82,7 +82,13 @@ router.get('/appointments/:id', requireAuth, getAppointmentById);
  * /api/appointments/{id}/cancel:
  *   post:
  *     summary: Cancel appointment (APT-004)
- *     description: Customer or Admin can cancel an appointment that is not already cancelled or completed.
+ *     description: |
+ *       Customer, practitioner, or admin can cancel an appointment that is not already
+ *       cancelled or completed. A plain customer cancelling their own booking may only
+ *       do so within 4 hours of when the booking was created (payment confirmed) —
+ *       practitioners and admins are exempt from this window. If the booking was paid,
+ *       a refund of the session price (excluding the non-refundable 5% tax) is
+ *       automatically initiated.
  *     tags: [Appointments]
  *     security:
  *       - BearerAuth: []
@@ -93,9 +99,13 @@ router.get('/appointments/:id', requireAuth, getAppointmentById);
  *         schema: { type: string, format: uuid }
  *     responses:
  *       200:
- *         description: Appointment cancelled
+ *         description: Appointment cancelled (and refund initiated, if applicable).
  *       400:
- *         description: Already cancelled or completed
+ *         description: |
+ *           Already cancelled/completed, or (for a customer's own booking) the 4-hour
+ *           self-cancellation window has expired — response includes `cancelWindowExpired: true`.
+ *       403:
+ *         description: Forbidden — not the booking's client, assigned practitioner, or an admin.
  *       404:
  *         description: Not found
  */

@@ -30,14 +30,17 @@ export const createSpace = async (fields) => {
  * 2. If no exact match, checks same region (first 2-3 digits of PIN)
  * 3. Fallback: returns available partner spaces so the user can choose a sanctuary
  */
+const PUBLIC_SPACE_COLUMNS = 'id, space_name, address, city, pin, capacity, space_type, amenities, availability, notes, status, space_images(id, image_url, sort_order)';
+
 export const listPublicSpaces = async (pin) => {
     if (pin) {
         // 1. Exact match
         const { data: exact, error: exactErr } = await supabase
             .from('partner_spaces')
-            .select('id, space_name, address, city, pin, capacity, space_type, amenities, availability, notes, status')
+            .select(PUBLIC_SPACE_COLUMNS)
             .eq('pin', pin)
-            .in('status', ['approved', 'contacted', 'new']);
+            .in('status', ['approved', 'contacted', 'new'])
+            .order('sort_order', { foreignTable: 'space_images', ascending: true });
 
         if (!exactErr && exact && exact.length > 0) return exact;
 
@@ -45,9 +48,10 @@ export const listPublicSpaces = async (pin) => {
         const prefix3 = pin.slice(0, 3);
         const { data: regional3 } = await supabase
             .from('partner_spaces')
-            .select('id, space_name, address, city, pin, capacity, space_type, amenities, availability, notes, status')
+            .select(PUBLIC_SPACE_COLUMNS)
             .ilike('pin', `${prefix3}%`)
-            .in('status', ['approved', 'contacted', 'new']);
+            .in('status', ['approved', 'contacted', 'new'])
+            .order('sort_order', { foreignTable: 'space_images', ascending: true });
 
         if (regional3 && regional3.length > 0) return regional3;
 
@@ -55,9 +59,10 @@ export const listPublicSpaces = async (pin) => {
         const prefix2 = pin.slice(0, 2);
         const { data: regional2 } = await supabase
             .from('partner_spaces')
-            .select('id, space_name, address, city, pin, capacity, space_type, amenities, availability, notes, status')
+            .select(PUBLIC_SPACE_COLUMNS)
             .ilike('pin', `${prefix2}%`)
-            .in('status', ['approved', 'contacted', 'new']);
+            .in('status', ['approved', 'contacted', 'new'])
+            .order('sort_order', { foreignTable: 'space_images', ascending: true });
 
         if (regional2 && regional2.length > 0) return regional2;
     }
@@ -65,8 +70,9 @@ export const listPublicSpaces = async (pin) => {
     // 3. Fallback: return all active partner spaces
     const { data: allSpaces, error } = await supabase
         .from('partner_spaces')
-        .select('id, space_name, address, city, pin, capacity, space_type, amenities, availability, notes, status')
+        .select(PUBLIC_SPACE_COLUMNS)
         .in('status', ['approved', 'contacted', 'new'])
+        .order('sort_order', { foreignTable: 'space_images', ascending: true })
         .limit(10);
 
     if (error) throw error;
@@ -84,8 +90,9 @@ export const listSpaces = async (filters = {}) => {
 
     let query = supabase
         .from('partner_spaces')
-        .select('*', { count: 'exact' })
-        .order('created_at', { ascending: false });
+        .select('*, space_images(id, image_url, sort_order)', { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .order('sort_order', { foreignTable: 'space_images', ascending: true });
 
     if (filters.status) query = query.eq('status', filters.status);
     if (filters.city) query = query.ilike('city', `%${filters.city}%`);
@@ -268,4 +275,60 @@ export const releaseSpaceSlot = async (id, slotId) => {
     return updated;
 };
 
+
+// ─── Space Photo Gallery ────────────────────────────────────────────────────
+
+/**
+ * Admin: Add one or more images to a space's gallery, appended after any
+ * existing images.
+ * @param {string} spaceId
+ * @param {{url: string, path: string}[]} uploads
+ */
+export const addSpaceImages = async (spaceId, uploads) => {
+    const { data: last } = await supabase
+        .from('space_images')
+        .select('sort_order')
+        .eq('space_id', spaceId)
+        .order('sort_order', { ascending: false })
+        .limit(1);
+
+    let nextOrder = (last?.[0]?.sort_order ?? -1) + 1;
+    const rows = uploads.map((u) => ({
+        space_id: spaceId,
+        image_url: u.url,
+        storage_path: u.path,
+        sort_order: nextOrder++,
+    }));
+
+    const { data, error } = await supabase
+        .from('space_images')
+        .insert(rows)
+        .select();
+
+    if (error) throw error;
+    return data;
+};
+
+/**
+ * Admin: Permanently delete one gallery image, including its storage object.
+ */
+export const deleteSpaceImage = async (imageId) => {
+    const { data, error } = await supabase
+        .from('space_images')
+        .delete()
+        .eq('id', imageId)
+        .select()
+        .maybeSingle();
+
+    if (error) throw error;
+    if (!data) throw Object.assign(new Error('Image not found'), { statusCode: 404 });
+
+    // Best-effort — the DB row is already gone either way, so an orphaned
+    // storage object isn't worth failing the request over.
+    try {
+        await supabase.storage.from('images').remove([data.storage_path]);
+    } catch (_) {}
+
+    return data;
+};
 

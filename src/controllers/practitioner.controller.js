@@ -136,7 +136,10 @@ export const adminCreatePractitioner = async (req, res) => {
  */
 export const adminUpdatePractitioner = async (req, res) => {
     try {
-        const data = await updatePractitionerById(req.params.id, req.body);
+        // rating is system-computed from customer reviews — admins cannot set
+        // it directly, even through a generic update payload.
+        const { rating, ...fields } = req.body;
+        const data = await updatePractitionerById(req.params.id, fields);
         res.status(200).json({ message: 'Practitioner updated successfully', practitioner: data });
     } catch (error) {
         console.error('adminUpdatePractitioner error:', error);

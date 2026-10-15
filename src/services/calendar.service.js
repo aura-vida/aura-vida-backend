@@ -16,7 +16,7 @@ export const createMeetEvent = async ({
     try {
         // Generate a random, unique room ID for the session
         const uniqueRoomId = crypto.randomBytes(8).toString('hex');
-        const roomName = `AuraVida-Session-${uniqueRoomId}`;
+        const roomName = `Kusala-Session-${uniqueRoomId}`;
         const meetLink = `https://meet.jit.si/${roomName}`;
 
         console.log(`✅ [VIDEO] Meeting link generated: ${meetLink}`);

@@ -121,7 +121,7 @@ ${trimmedDescription}
                     </div>
 
                     <div style="border-top: 1px solid #e5e7eb; padding-top: 16px; font-size: 12px; color: #9ca3af; text-align: center;">
-                        This message was submitted from the Practitioner Workspace on Kuśala / Aura Vida.
+                        This message was submitted from the Practitioner Workspace on Kuśala / Kusala.
                     </div>
                 </div>
             `;

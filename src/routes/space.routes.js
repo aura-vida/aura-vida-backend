@@ -8,8 +8,11 @@ import {
     adminDeleteSpace,
     adminPackSpaceSlotController,
     adminReleaseSpaceSlotController,
+    adminUploadSpaceImages,
+    adminDeleteSpaceImage,
 } from '../controllers/space.controller.js';
 import { requireAuth, requireRole } from '../middleware/auth.middleware.js';
+import { upload } from '../middleware/upload.middleware.js';
 
 const router = express.Router();
 
@@ -25,12 +28,12 @@ const router = express.Router();
  * /api/spaces:
  *   post:
  *     summary: Submit a studio/space listing (public)
- *     description: Allows anyone to submit their studio space for review.
+ *     description: Allows anyone to submit their studio space for review, optionally with photos.
  *     tags: [Spaces]
  *     requestBody:
  *       required: true
  *       content:
- *         application/json:
+ *         multipart/form-data:
  *           schema:
  *             type: object
  *             required: [contact_name, email, space_name, address, city, pin, capacity]
@@ -44,16 +47,19 @@ const router = express.Router();
  *               capacity:     { type: integer, example: 20 }
  *               phone:        { type: string, example: "+919876543210" }
  *               space_type:   { type: string, example: "Yoga Studio" }
- *               amenities:    { type: array, items: { type: string }, example: ["AC", "Mats", "Sound System"] }
+ *               amenities:    { type: string, example: "AC, Mats, Sound System" }
  *               availability: { type: string, example: "Weekdays 6am-8pm" }
  *               notes:        { type: string }
+ *               images:
+ *                 type: array
+ *                 items: { type: string, format: binary }
  *     responses:
  *       201:
  *         description: Space submission received
  *       400:
  *         description: Missing required fields
  */
-router.post('/spaces', submitSpace);
+router.post('/spaces', upload.array('images', 20), submitSpace);
 
 import { getPublicSpaces } from '../controllers/space.controller.js';
 
@@ -211,5 +217,62 @@ router.post('/admin/spaces/:id/pack-slot', requireAuth, requireRole('admin'), ad
   *     tags: [Spaces, Admin]
   */
 router.delete('/admin/spaces/:id/packed-slots/:slotId', requireAuth, requireRole('admin'), adminReleaseSpaceSlotController);
+
+/**
+ * @swagger
+ * /api/admin/spaces/{id}/images:
+ *   post:
+ *     summary: Admin - Upload photos to a space's gallery
+ *     description: Accepts up to 20 image files (field name "images") per request. Can be called multiple times to add more.
+ *     tags: [Spaces, Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               images:
+ *                 type: array
+ *                 items: { type: string, format: binary }
+ *     responses:
+ *       201:
+ *         description: Images uploaded
+ *       400:
+ *         description: No files provided
+ */
+router.post('/admin/spaces/:id/images', requireAuth, requireRole('admin'), upload.array('images', 20), adminUploadSpaceImages);
+
+/**
+ * @swagger
+ * /api/admin/spaces/{id}/images/{imageId}:
+ *   delete:
+ *     summary: Admin - Remove a single photo from a space's gallery
+ *     tags: [Spaces, Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - in: path
+ *         name: imageId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Image deleted
+ *       404:
+ *         description: Image not found
+ */
+router.delete('/admin/spaces/:id/images/:imageId', requireAuth, requireRole('admin'), adminDeleteSpaceImage);
 
 export default router;

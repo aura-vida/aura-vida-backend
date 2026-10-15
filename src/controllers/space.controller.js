@@ -8,8 +8,11 @@ import {
     deleteSpace,
     packSpaceSlot,
     releaseSpaceSlot,
+    addSpaceImages,
+    deleteSpaceImage,
 } from '../models/space.model.js';
 import { notifyAdmins } from '../models/notification.model.js';
+import { uploadImageWithPath } from '../middleware/upload.middleware.js';
 
 const VALID_STATUSES = ['new', 'contacted', 'approved', 'declined'];
 
@@ -53,6 +56,11 @@ export const adminUpdateSpaceController = async (req, res) => {
         }
         delete updateFields.id;
         delete updateFields.created_at;
+        // space_images is a related table embedded into list responses for
+        // display, not a real column on partner_spaces — the admin edit form
+        // sends the whole row back on save, so this must be stripped or the
+        // update fails with "column does not exist".
+        delete updateFields.space_images;
 
         const data = await adminUpdateSpace(req.params.id, updateFields);
         res.status(200).json({ message: 'Space updated successfully', space: data });
@@ -88,7 +96,7 @@ export const adminDeleteSpace = async (req, res) => {
     }
 };
 
-// POST /api/spaces  — public
+// POST /api/spaces  — public, multipart/form-data (field name "images", up to 20 files, optional)
 export const submitSpace = async (req, res) => {
     try {
         const { contact_name, email, space_name, address, city, pin, capacity, phone, space_type, amenities, availability, notes } = req.body;
@@ -107,10 +115,25 @@ export const submitSpace = async (req, res) => {
             capacity: parseInt(capacity),
             phone: phone || null,
             space_type: space_type || null,
-            amenities: amenities || [],
+            // multipart/form-data sends this as a comma-separated string, a
+            // plain JSON request sends it as an array already — handle both.
+            amenities: Array.isArray(amenities) ? amenities : (amenities ? String(amenities).split(',').map(s => s.trim()).filter(Boolean) : []),
             availability: availability || null,
             notes: notes || null,
         });
+
+        const files = req.files || [];
+        if (files.length > 0) {
+            try {
+                const uploads = await Promise.all(
+                    files.map((f) => uploadImageWithPath(f.buffer, f.originalname, `spaces/${data.id}`))
+                );
+                await addSpaceImages(data.id, uploads);
+            } catch (uploadErr) {
+                console.error('submitSpace image upload error:', uploadErr);
+                // the submission itself already succeeded — don't fail the whole request over photos
+            }
+        }
 
         // Notify admins asynchronously (non-blocking)
         try {
@@ -186,3 +209,32 @@ export const adminReleaseSpaceSlotController = async (req, res) => {
     }
 };
 
+// POST /api/admin/spaces/:id/images  — admin only, multipart ("images" field, up to 20 files)
+export const adminUploadSpaceImages = async (req, res) => {
+    try {
+        const files = req.files || [];
+        if (files.length === 0) {
+            return res.status(400).json({ error: 'At least one image file is required.' });
+        }
+
+        const uploads = await Promise.all(
+            files.map((f) => uploadImageWithPath(f.buffer, f.originalname, `spaces/${req.params.id}`))
+        );
+        const images = await addSpaceImages(req.params.id, uploads);
+        res.status(201).json({ message: 'Images uploaded successfully', images });
+    } catch (err) {
+        console.error('adminUploadSpaceImages error:', err);
+        res.status(err.statusCode || 500).json({ error: err.message || 'Failed to upload images' });
+    }
+};
+
+// DELETE /api/admin/spaces/:id/images/:imageId  — admin only
+export const adminDeleteSpaceImage = async (req, res) => {
+    try {
+        await deleteSpaceImage(req.params.imageId);
+        res.status(200).json({ message: 'Image deleted successfully' });
+    } catch (err) {
+        console.error('adminDeleteSpaceImage error:', err);
+        res.status(err.statusCode || 500).json({ error: err.message || 'Failed to delete image' });
+    }
+};

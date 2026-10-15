@@ -5,6 +5,7 @@ import {
     logout,
     sendOtp,
     verifyOtp,
+    verifyMagicLink,
     forgotPassword,
     resetPassword,
     refreshToken
@@ -192,6 +193,35 @@ router.post('/send-otp', sendOtp);
  *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.post('/verify-otp', verifyOtp);
+
+/**
+ * @swagger
+ * /api/auth/verify-magic-link:
+ *   post:
+ *     summary: Verify a magic-link token_hash and return an authenticated session
+ *     description: |
+ *       Consumes a one-time Supabase magic-link token_hash (e.g. from a practitioner
+ *       welcome email) and returns a real session, equivalent to logging in. Called
+ *       only on an explicit user click on our own page, never on page load — this
+ *       keeps the link immune to email clients/security scanners that pre-fetch links.
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [token_hash]
+ *             properties:
+ *               token_hash:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Verified. Returns user object, profile, and session tokens.
+ *       401:
+ *         description: Token is invalid or expired.
+ */
+router.post('/verify-magic-link', verifyMagicLink);
 
 /**
  * @swagger

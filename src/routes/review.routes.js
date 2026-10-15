@@ -1,5 +1,5 @@
 import express from 'express';
-import { requireAuth } from '../middleware/auth.middleware.js';
+import { requireAuth, requireRole } from '../middleware/auth.middleware.js';
 import * as reviewController from '../controllers/review.controller.js';
 
 const router = express.Router();
@@ -36,6 +36,10 @@ router.get('/practitioner/:id', reviewController.listPractitionerReviews);
  * /api/reviews:
  *   post:
  *     summary: Submit a review for a practitioner (REVIEW-002)
+ *     description: |
+ *       Customers only. A customer may only review a practitioner they've had a
+ *       confirmed or completed booking with. Practitioners and admins cannot
+ *       submit or modify ratings through this endpoint.
  *     tags: [Reviews]
  *     security:
  *       - bearerAuth: []
@@ -61,6 +65,6 @@ router.get('/practitioner/:id', reviewController.listPractitionerReviews);
  *       201:
  *         description: Review submitted and pending approval
  */
-router.post('/', requireAuth, reviewController.createReview);
+router.post('/', requireAuth, requireRole('client'), reviewController.createReview);
 
 export default router;

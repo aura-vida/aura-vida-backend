@@ -1,6 +1,7 @@
 import express from 'express';
 import {
     getServices,
+    getAdminServices,
     getService,
     adminCreateService,
     adminUpdateService,
@@ -78,6 +79,21 @@ router.get('/services/:id', getService);
 /**
  * @swagger
  * /api/admin/services:
+ *   get:
+ *     summary: Admin – list all services, active or hidden (SERVICE-006)
+ *     description: Admin only. Unlike GET /api/services (public, active only), this returns every service so hidden/soft-deleted ones can be found and managed.
+ *     tags: [Services]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Paginated list of all services.
+ */
+router.get('/admin/services', requireAuth, requireRole('admin'), getAdminServices);
+
+/**
+ * @swagger
+ * /api/admin/services:
  *   post:
  *     summary: Create a service (SERVICE-003)
  *     description: Admin only. Creates a new wellness service entry.
@@ -148,8 +164,11 @@ router.patch('/admin/services/:id', requireAuth, requireRole('admin'), upload.si
  * @swagger
  * /api/admin/services/{id}:
  *   delete:
- *     summary: Delete/deactivate a service (SERVICE-005)
- *     description: Admin only. Soft-deletes (sets is_active = false) to preserve existing booking references.
+ *     summary: Permanently delete a service (SERVICE-005)
+ *     description: |
+ *       Admin only. Permanently deletes the service row (no booking references it, so
+ *       this is safe). To hide a service from the public site without deleting it,
+ *       use PATCH with `is_active: false` instead.
  *     tags: [Services]
  *     security:
  *       - BearerAuth: []
