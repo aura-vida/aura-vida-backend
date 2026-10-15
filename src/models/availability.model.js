@@ -248,7 +248,13 @@ export const calculateAvailableSlots = async (slug, dateStr, spaceId = null) => 
                 const slotEndMin = toMinutes(slot.end);
 
                 // Check 1: Must fall within space opening hours
-                if (slotStartMin < openMin || slotEndMin > closeMin) return false;
+                // Supports standard daytime hours (e.g. 09:00 - 19:00) and overnight/late-night hours (e.g. 03:12 - 01:19 or 20:00 - 02:00)
+                const isWithinOperatingHours =
+                    openMin <= closeMin
+                        ? slotStartMin >= openMin && slotEndMin <= closeMin
+                        : slotStartMin >= openMin || slotEndMin <= closeMin;
+
+                if (!isWithinOperatingHours) return false;
 
                 // Check 2: Space must not already have a booked appointment at this time
                 if (spaceBookedTimes.has(slot.start)) return false;
