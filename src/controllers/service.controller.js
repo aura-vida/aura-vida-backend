@@ -2,10 +2,12 @@ import {
     listServices,
     adminListServices,
     getServiceById,
-    createService,
-    updateServiceById,
-    deleteServicePermanently,
+    listServicesByPractitioner,
+    createServiceForPractitioner,
+    updateServiceForPractitioner,
+    deleteServiceForPractitioner,
 } from '../models/service.model.js';
+import { getPractitionerByUserId } from '../models/practitioner.model.js';
 import { uploadToSupabase } from '../middleware/upload.middleware.js';
 
 // SERVICE-001
@@ -19,7 +21,8 @@ export const getServices = async (req, res) => {
     }
 };
 
-// Admin: list all services (active + hidden)
+// Admin: list all services (active + hidden), read-only — each row carries
+// which practitioner created it.
 export const getAdminServices = async (req, res) => {
     try {
         const { data, pagination } = await adminListServices(req.query);
@@ -42,23 +45,36 @@ export const getService = async (req, res) => {
     }
 };
 
-// SERVICE-003 — multipart/form-data
-export const adminCreateService = async (req, res) => {
+// ─── Practitioner self-service ──────────────────────────────────────────────
+
+// GET /api/practitioners/me/services
+export const getMyServices = async (req, res) => {
     try {
-        const { name, description, duration_min, price_inr, category, sort_order } = req.body;
+        const practitioner = await getPractitionerByUserId(req.user.id);
+        const services = await listServicesByPractitioner(practitioner.id);
+        res.status(200).json({ services });
+    } catch (err) {
+        console.error('getMyServices error:', err);
+        const status = err.statusCode || 500;
+        res.status(status).json({ error: err.message || 'Failed to fetch your services' });
+    }
+};
+
+// POST /api/practitioners/me/services — multipart/form-data
+export const createMyService = async (req, res) => {
+    try {
+        const practitioner = await getPractitionerByUserId(req.user.id);
+        const { name, description, price_inr, category, sort_order } = req.body;
         if (!name) return res.status(400).json({ error: 'name is required.' });
 
         let image_url = req.body.image_url || null;
-
-        // If a file was uploaded via form-data, push it to Supabase Storage
         if (req.file) {
             image_url = await uploadToSupabase(req.file.buffer, req.file.originalname, 'services');
         }
 
-        const service = await createService({
+        const service = await createServiceForPractitioner(practitioner.id, {
             name,
             description: description || null,
-            duration_min: duration_min ? parseInt(duration_min) : 60,
             price_inr: price_inr ? parseFloat(price_inr) : 0,
             category: category || null,
             image_url,
@@ -66,19 +82,18 @@ export const adminCreateService = async (req, res) => {
         });
         res.status(201).json({ message: 'Service created successfully', service });
     } catch (err) {
-        console.error('adminCreateService error:', err);
-        if (err.code === '23505') return res.status(409).json({ error: 'A service with this name already exists.' });
-        res.status(500).json({ error: err.message || 'Failed to create service' });
+        console.error('createMyService error:', err);
+        const status = err.statusCode || 500;
+        res.status(status).json({ error: err.message || 'Failed to create service' });
     }
 };
 
-// SERVICE-004 — multipart/form-data
-export const adminUpdateService = async (req, res) => {
+// PATCH /api/practitioners/me/services/:id — multipart/form-data
+export const updateMyService = async (req, res) => {
     try {
+        const practitioner = await getPractitionerByUserId(req.user.id);
         const fields = { ...req.body };
 
-        // Parse numeric fields that come in as strings in form-data
-        if (fields.duration_min) fields.duration_min = parseInt(fields.duration_min);
         if (fields.price_inr) fields.price_inr = parseFloat(fields.price_inr);
         if (fields.sort_order) fields.sort_order = parseInt(fields.sort_order);
         // is_active arrives as a real boolean on a plain JSON request, but as
@@ -89,27 +104,27 @@ export const adminUpdateService = async (req, res) => {
             fields.is_active = typeof fields.is_active === 'string' ? fields.is_active === 'true' : !!fields.is_active;
         }
 
-        // If a new image was uploaded, push to Supabase Storage
         if (req.file) {
             fields.image_url = await uploadToSupabase(req.file.buffer, req.file.originalname, 'services');
         }
 
-        const service = await updateServiceById(req.params.id, fields);
+        const service = await updateServiceForPractitioner(req.params.id, practitioner.id, fields);
         res.status(200).json({ message: 'Service updated successfully', service });
     } catch (err) {
-        console.error('adminUpdateService error:', err);
+        console.error('updateMyService error:', err);
         const status = err.statusCode || 500;
         res.status(status).json({ error: err.message || 'Failed to update service' });
     }
 };
 
-// SERVICE-005
-export const adminDeleteService = async (req, res) => {
+// DELETE /api/practitioners/me/services/:id
+export const deleteMyService = async (req, res) => {
     try {
-        await deleteServicePermanently(req.params.id);
+        const practitioner = await getPractitionerByUserId(req.user.id);
+        await deleteServiceForPractitioner(req.params.id, practitioner.id);
         res.status(200).json({ message: 'Service deleted successfully' });
     } catch (err) {
-        console.error('adminDeleteService error:', err);
+        console.error('deleteMyService error:', err);
         const status = err.statusCode || 500;
         res.status(status).json({ error: err.message || 'Failed to delete service' });
     }

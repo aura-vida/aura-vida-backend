@@ -128,17 +128,6 @@ export const updatePractitionerStatus = async (req, res) => {
     }
 };
 
-export const updatePractitionerServices = async (req, res) => {
-    try {
-        const { serviceIds } = req.body;
-        const result = await adminModel.updatePractitionerServices(req.params.id, serviceIds);
-        res.status(200).json(result);
-    } catch (error) {
-        console.error('Admin Update Practitioner Services Error:', error);
-        res.status(500).json({ error: error.message || 'Error updating practitioner services' });
-    }
-};
-
 export const listContacts = async (req, res) => {
     try {
         const page = Math.max(1, parseInt(req.query.page) || 1);

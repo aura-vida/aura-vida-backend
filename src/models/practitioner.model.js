@@ -55,40 +55,45 @@ export const getPractitionerBySlug = async (slug) => {
 };
 
 /**
- * PRAC-002b: Get the services actually assigned to a practitioner (public)
- * Used by the booking flow so pricing/duration reflect what this specific
- * practitioner offers instead of the entire global services catalog.
+ * PRAC-002b: Get the services a practitioner has created for themselves (public)
+ * Used by the booking flow so pricing reflects what this specific
+ * practitioner actually offers. Each service belongs to exactly one
+ * practitioner (services.practitioner_id) — there is no shared catalog to
+ * fall back to anymore.
  */
 export const getServicesForPractitionerSlug = async (slug) => {
     const practitioner = await getPractitionerBySlug(slug);
 
     const { data, error } = await supabase
-        .from('practitioner_services')
-        .select('services(*)')
-        .eq('practitioner_id', practitioner.id);
-
-    if (error) throw error;
-
-    const assigned = (data || [])
-        .map((row) => row.services)
-        .filter((service) => service && service.is_active !== false)
-        .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
-
-    if (assigned.length > 0) return assigned;
-
-    // No admin-assigned services for this practitioner yet — fall back to the
-    // full active catalog so the booking flow still has options to pick from.
-    // Pricing is never taken from here: the amount actually charged always
-    // comes from the practitioner's own `price_inr` (see payment.controller.js).
-    const { data: allServices, error: allErr } = await supabase
         .from('services')
         .select('*')
+        .eq('practitioner_id', practitioner.id)
         .eq('is_active', true)
         .order('sort_order', { ascending: true })
         .order('created_at', { ascending: false });
 
-    if (allErr) throw allErr;
-    return allServices || [];
+    if (error) throw error;
+    return data || [];
+};
+
+/**
+ * Resolves the practitioner row owned by a logged-in auth user, for
+ * self-service endpoints (e.g. managing their own services).
+ */
+export const getPractitionerByUserId = async (userId) => {
+    const { data: profile, error: profileErr } = await supabase
+        .from('profiles')
+        .select('practitioner_slug')
+        .eq('id', userId)
+        .maybeSingle();
+
+    if (profileErr || !profile?.practitioner_slug) {
+        throw Object.assign(new Error('Practitioner profile not linked.'), { statusCode: 404 });
+    }
+
+    const practitioner = await getPractitionerBySlug(profile.practitioner_slug);
+    if (!practitioner) throw Object.assign(new Error('Practitioner not found.'), { statusCode: 404 });
+    return practitioner;
 };
 
 // ─── Admin ────────────────────────────────────────────────────────────────────
@@ -365,45 +370,6 @@ export const updatePractitionerStatus = async (id, isActive) => {
     if (error) throw error;
     if (!data) throw Object.assign(new Error('Practitioner not found'), { statusCode: 404 });
     return data;
-};
-
-/**
- * PRAC-009: Assign services to practitioner (PATCH /api/admin/practitioners/:id/services)
- */
-export const assignPractitionerServices = async (id, serviceIds = []) => {
-    // 1. Ensure practitioner exists
-    const { data: prac, error: pracErr } = await supabase
-        .from('practitioners')
-        .select('id')
-        .eq('id', id)
-        .maybeSingle();
-
-    if (pracErr) throw pracErr;
-    if (!prac) throw Object.assign(new Error('Practitioner not found'), { statusCode: 404 });
-
-    // 2. Delete all existing mappings
-    const { error: deleteErr } = await supabase
-        .from('practitioner_services')
-        .delete()
-        .eq('practitioner_id', id);
-
-    if (deleteErr) throw deleteErr;
-
-    // 3. Insert new ones
-    if (serviceIds.length > 0) {
-        const rows = serviceIds.map(serviceId => ({
-            practitioner_id: id,
-            service_id: serviceId
-        }));
-
-        const { error: insertErr } = await supabase
-            .from('practitioner_services')
-            .insert(rows);
-
-        if (insertErr) throw insertErr;
-    }
-
-    return { practitioner_id: id, services: serviceIds };
 };
 
 // ─── Practitioner Self-Service ────────────────────────────────────────────────

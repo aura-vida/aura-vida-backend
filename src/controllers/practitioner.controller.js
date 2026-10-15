@@ -8,7 +8,6 @@ import {
     getOwnPractitionerProfile,
     updateOwnPractitionerProfile,
     updatePractitionerStatus,
-    assignPractitionerServices,
     adminListPractitioners,
     getPractitionerById,
     applyPractitioner,
@@ -174,23 +173,6 @@ export const adminUpdatePractitionerStatus = async (req, res) => {
     } catch (error) {
         console.error('adminUpdatePractitionerStatus error:', error);
         res.status(error.statusCode || 500).json({ error: error.message || 'Failed to update status' });
-    }
-};
-
-/**
- * PRAC-009: PATCH /api/admin/practitioners/:id/services
- */
-export const adminAssignServices = async (req, res) => {
-    try {
-        const { serviceIds } = req.body;
-        if (!Array.isArray(serviceIds)) {
-            return res.status(400).json({ error: 'Body must contain an array "serviceIds"' });
-        }
-        const result = await assignPractitionerServices(req.params.id, serviceIds);
-        res.status(200).json({ message: 'Services assigned successfully', ...result });
-    } catch (error) {
-        console.error('adminAssignServices error:', error);
-        res.status(error.statusCode || 500).json({ error: error.message || 'Failed to assign services' });
     }
 };
 

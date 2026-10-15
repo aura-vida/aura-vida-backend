@@ -273,37 +273,6 @@ router.delete('/practitioners/:id', requireAuth, requireRole('admin'), adminCont
 
 /**
  * @swagger
- * /api/admin/practitioners/{id}/services:
- *   patch:
- *     summary: Update practitioner linked services
- *     tags: [Admin]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               serviceIds:
- *                 type: array
- *                 items:
- *                   type: string
- *     responses:
- *       200:
- *         description: Services updated successfully
- */
-router.patch('/practitioners/:id/services', requireAuth, requireRole('admin'), adminController.updatePractitionerServices);
-
-/**
- * @swagger
  * /api/admin/contacts:
  *   get:
  *     summary: List all contact enquiries (CONTACT-002)

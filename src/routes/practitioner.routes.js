@@ -9,12 +9,17 @@ import {
     getMyPractitionerProfile,
     updateMyPractitionerProfile,
     adminUpdatePractitionerStatus,
-    adminAssignServices,
     adminGetAllPractitioners,
     adminGetPractitionerById,
     applyToJoinAsPractitioner,
     adminApprovePractitioner,
 } from '../controllers/practitioner.controller.js';
+import {
+    getMyServices,
+    createMyService,
+    updateMyService,
+    deleteMyService,
+} from '../controllers/service.controller.js';
 import { requireAuth, requireRole } from '../middleware/auth.middleware.js';
 import { upload } from '../middleware/upload.middleware.js';
 import { submitPractitionerSupport } from '../controllers/support.controller.js';
@@ -164,6 +169,98 @@ router.patch('/practitioners/me', requireAuth, requireRole('practitioner'), uplo
  */
 router.post('/practitioners/support', requireAuth, requireRole('practitioner', 'admin'), submitPractitionerSupport);
 
+// NOTE: these /practitioners/me/services* routes must be registered before
+// /practitioners/:slug and /practitioners/:slug/services below — Express
+// matches routes in registration order, so a generic :slug route registered
+// first would otherwise swallow "me" as if it were a practitioner's slug.
+
+/**
+ * @swagger
+ * /api/practitioners/me/services:
+ *   get:
+ *     summary: List my own services (practitioner self-service)
+ *     description: Returns all services the logged-in practitioner has created, active or hidden.
+ *     tags: [Practitioners]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of services.
+ */
+router.get('/practitioners/me/services', requireAuth, requireRole('practitioner'), getMyServices);
+
+/**
+ * @swagger
+ * /api/practitioners/me/services:
+ *   post:
+ *     summary: Create a new service (practitioner self-service)
+ *     description: Multipart/form-data. duration_min is not accepted — every session is fixed at 60 minutes.
+ *     tags: [Practitioners]
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [name]
+ *             properties:
+ *               name:        { type: string, example: "Reiki Healing" }
+ *               description: { type: string }
+ *               price_inr:   { type: number, example: 1500 }
+ *               category:    { type: string, example: "Energy Healing" }
+ *               sort_order:  { type: integer }
+ *               image:       { type: string, format: binary }
+ *     responses:
+ *       201:
+ *         description: Service created.
+ */
+router.post('/practitioners/me/services', requireAuth, requireRole('practitioner'), upload.single('image'), createMyService);
+
+/**
+ * @swagger
+ * /api/practitioners/me/services/{id}:
+ *   patch:
+ *     summary: Update one of my own services (practitioner self-service)
+ *     description: Multipart/form-data. Scoped to services owned by the logged-in practitioner.
+ *     tags: [Practitioners]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Service updated.
+ *       404:
+ *         description: Service not found (or not owned by you).
+ */
+router.patch('/practitioners/me/services/:id', requireAuth, requireRole('practitioner'), upload.single('image'), updateMyService);
+
+/**
+ * @swagger
+ * /api/practitioners/me/services/{id}:
+ *   delete:
+ *     summary: Delete one of my own services (practitioner self-service)
+ *     tags: [Practitioners]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Service deleted.
+ *       404:
+ *         description: Service not found (or not owned by you).
+ */
+router.delete('/practitioners/me/services/:id', requireAuth, requireRole('practitioner'), deleteMyService);
+
 /**
  * @swagger
  * /api/practitioners/{slug}:
@@ -189,8 +286,8 @@ router.get('/practitioners/:slug', getPractitionerProfile);
  * @swagger
  * /api/practitioners/{slug}/services:
  *   get:
- *     summary: Get the services assigned to a practitioner (PRAC-002b)
- *     description: Returns only the services this practitioner actually offers (via admin service assignment), so booking pricing/duration reflect this practitioner instead of the global catalog. No authentication required.
+ *     summary: Get a practitioner's own services (PRAC-002b)
+ *     description: Returns the services this practitioner has created for themselves, so booking pricing reflects this practitioner instead of a shared catalog. No authentication required.
  *     tags: [Practitioners]
  *     parameters:
  *       - in: path
@@ -199,7 +296,7 @@ router.get('/practitioners/:slug', getPractitionerProfile);
  *         schema: { type: string }
  *     responses:
  *       200:
- *         description: List of services assigned to this practitioner.
+ *         description: List of this practitioner's own services.
  *       404:
  *         description: Practitioner not found.
  */
@@ -399,35 +496,5 @@ router.patch('/admin/practitioners/:id/status', requireAuth, requireRole('admin'
  * Approve a pending practitioner – creates their auth account and sends invite email
  */
 router.post('/admin/practitioners/:id/approve', requireAuth, requireRole('admin'), adminApprovePractitioner);
-
-/**
- * @swagger
- * /api/admin/practitioners/{id}/services:
- *   patch:
- *     summary: Assign services to a practitioner (PRAC-009)
- *     tags: [Practitioners, Admin]
- *     security:
- *       - BearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: string, format: uuid }
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [serviceIds]
- *             properties:
- *               serviceIds: 
- *                 type: array
- *                 items: { type: string, format: uuid }
- *     responses:
- *       200:
- *         description: Services assigned successfully
- */
-router.patch('/admin/practitioners/:id/services', requireAuth, requireRole('admin'), adminAssignServices);
 
 export default router;

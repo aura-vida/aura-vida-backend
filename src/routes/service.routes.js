@@ -3,12 +3,8 @@ import {
     getServices,
     getAdminServices,
     getService,
-    adminCreateService,
-    adminUpdateService,
-    adminDeleteService,
 } from '../controllers/service.controller.js';
 import { requireAuth, requireRole } from '../middleware/auth.middleware.js';
-import { upload } from '../middleware/upload.middleware.js';
 
 const router = express.Router();
 
@@ -16,7 +12,7 @@ const router = express.Router();
  * @swagger
  * tags:
  *   name: Services
- *   description: Wellness service catalogue APIs
+ *   description: Wellness services — each one is created and owned by a practitioner (see /api/practitioners/me/services for self-service management)
  */
 
 /**
@@ -24,7 +20,7 @@ const router = express.Router();
  * /api/services:
  *   get:
  *     summary: List all active services (SERVICE-001)
- *     description: Returns active services. Public, no token required. Optionally filter by category. Supports pagination.
+ *     description: Returns active services across all practitioners. Public, no token required. Optionally filter by category. Supports pagination.
  *     tags: [Services]
  *     parameters:
  *       - in: query
@@ -80,109 +76,18 @@ router.get('/services/:id', getService);
  * @swagger
  * /api/admin/services:
  *   get:
- *     summary: Admin – list all services, active or hidden (SERVICE-006)
- *     description: Admin only. Unlike GET /api/services (public, active only), this returns every service so hidden/soft-deleted ones can be found and managed.
+ *     summary: Admin – list all services, read-only (SERVICE-006)
+ *     description: |
+ *       Admin only, read-only. Services are created and managed by the practitioners who
+ *       own them (see /api/practitioners/me/services) — this endpoint exists purely for
+ *       admin oversight, so each row includes the owning practitioner's name and slug.
  *     tags: [Services]
  *     security:
  *       - BearerAuth: []
  *     responses:
  *       200:
- *         description: Paginated list of all services.
+ *         description: Paginated list of all services, each with its owning practitioner.
  */
 router.get('/admin/services', requireAuth, requireRole('admin'), getAdminServices);
-
-/**
- * @swagger
- * /api/admin/services:
- *   post:
- *     summary: Create a service (SERVICE-003)
- *     description: Admin only. Creates a new wellness service entry.
- *     tags: [Services]
- *     security:
- *       - BearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [name]
- *             properties:
- *               name:         { type: string, example: "Hatha Yoga" }
- *               description:  { type: string, example: "A gentle yoga practice." }
- *               duration_min: { type: integer, example: 60 }
- *               price_inr:    { type: number, example: 1500 }
- *               category:     { type: string, example: "Yoga" }
- *               image_url:    { type: string }
- *               sort_order:   { type: integer, example: 1 }
- *     responses:
- *       201:
- *         description: Service created.
- *       409:
- *         description: Duplicate service name.
- */
-router.post('/admin/services', requireAuth, requireRole('admin'), upload.single('image'), adminCreateService);
-
-/**
- * @swagger
- * /api/admin/services/{id}:
- *   patch:
- *     summary: Update a service (SERVICE-004)
- *     description: Admin only. Partially updates an existing service.
- *     tags: [Services]
- *     security:
- *       - BearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: string, format: uuid }
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               name:         { type: string }
- *               description:  { type: string }
- *               duration_min: { type: integer }
- *               price_inr:    { type: number }
- *               category:     { type: string }
- *               image_url:    { type: string }
- *               is_active:    { type: boolean }
- *               sort_order:   { type: integer }
- *     responses:
- *       200:
- *         description: Service updated.
- *       404:
- *         description: Service not found.
- */
-router.patch('/admin/services/:id', requireAuth, requireRole('admin'), upload.single('image'), adminUpdateService);
-
-/**
- * @swagger
- * /api/admin/services/{id}:
- *   delete:
- *     summary: Permanently delete a service (SERVICE-005)
- *     description: |
- *       Admin only. Permanently deletes the service row (no booking references it, so
- *       this is safe). To hide a service from the public site without deleting it,
- *       use PATCH with `is_active: false` instead.
- *     tags: [Services]
- *     security:
- *       - BearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: string, format: uuid }
- *     responses:
- *       200:
- *         description: Service deactivated.
- *       404:
- *         description: Service not found.
- */
-router.delete('/admin/services/:id', requireAuth, requireRole('admin'), adminDeleteService);
 
 export default router;

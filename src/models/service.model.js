@@ -1,5 +1,10 @@
 import { supabase } from '../config/supabase.js';
 
+// Every session is always 60 minutes — practitioners don't choose a duration
+// when creating a service, so it's just forced here rather than exposed as
+// an input.
+const SESSION_DURATION_MIN = 60;
+
 // ─── SERVICE-001: List all active services (public) ───────────────────────────
 export const listServices = async (filters = {}) => {
     const page = Math.max(1, parseInt(filters.page) || 1);
@@ -23,10 +28,9 @@ export const listServices = async (filters = {}) => {
     return { data, pagination: { page, limit, total: count, totalPages: Math.ceil(count / limit) } };
 };
 
-// ─── Admin: List ALL services, active or hidden ────────────────────────────────
-// (GET /api/services is public and only returns is_active=true — admins need
-// to see hidden/soft-deleted services too, otherwise one hidden by mistake
-// becomes permanently unreachable in the admin UI.)
+// ─── Admin: List ALL services, active or hidden, read-only ────────────────────
+// Admins no longer create/edit services — practitioners own that now — this
+// is purely an oversight view, so each row carries who created it.
 export const adminListServices = async (filters = {}) => {
     const page = Math.max(1, parseInt(filters.page) || 1);
     const limit = Math.min(200, Math.max(1, parseInt(filters.limit) || 100));
@@ -35,7 +39,7 @@ export const adminListServices = async (filters = {}) => {
 
     let query = supabase
         .from('services')
-        .select('*', { count: 'exact' })
+        .select('*, practitioners(id, name, slug)', { count: 'exact' })
         .order('sort_order', { ascending: true })
         .order('created_at', { ascending: false });
 
@@ -65,11 +69,24 @@ export const getServiceById = async (id) => {
     return data;
 };
 
-// ─── SERVICE-003: Create a service (admin) ────────────────────────────────────
-export const createService = async (fields) => {
+// ─── Practitioner self-service: list own services (active + hidden) ──────────
+export const listServicesByPractitioner = async (practitionerId) => {
     const { data, error } = await supabase
         .from('services')
-        .insert([fields])
+        .select('*')
+        .eq('practitioner_id', practitionerId)
+        .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+};
+
+// ─── Practitioner self-service: create a service they own ────────────────────
+export const createServiceForPractitioner = async (practitionerId, fields) => {
+    const { data, error } = await supabase
+        .from('services')
+        .insert([{ ...fields, practitioner_id: practitionerId, duration_min: SESSION_DURATION_MIN }])
         .select()
         .single();
 
@@ -77,12 +94,16 @@ export const createService = async (fields) => {
     return data;
 };
 
-// ─── SERVICE-004: Update a service by ID (admin) ──────────────────────────────
-export const updateServiceById = async (id, fields) => {
+// ─── Practitioner self-service: update a service they own ────────────────────
+// Scoping the update to practitioner_id (not just id) means a practitioner
+// can never modify another practitioner's service, even by guessing an id.
+export const updateServiceForPractitioner = async (id, practitionerId, fields) => {
+    const { duration_min, practitioner_id, ...safeFields } = fields;
     const { data, error } = await supabase
         .from('services')
-        .update({ ...fields, updated_at: new Date().toISOString() })
+        .update({ ...safeFields, duration_min: SESSION_DURATION_MIN, updated_at: new Date().toISOString() })
         .eq('id', id)
+        .eq('practitioner_id', practitionerId)
         .select()
         .maybeSingle();
 
@@ -95,16 +116,16 @@ export const updateServiceById = async (id, fields) => {
     return data;
 };
 
-// ─── SERVICE-005: Permanently delete a service by ID (admin) ──────────────────
+// ─── Practitioner self-service: permanently delete a service they own ────────
 // Safe to hard-delete: no bookings reference services.id directly (bookings
-// store a free-text item_id), and practitioner_services.service_id cascades
-// on delete. Hiding a service without deleting it is handled separately via
-// the "Show on site" (is_active) toggle.
-export const deleteServicePermanently = async (id) => {
+// store a free-text item_id). Hiding a service without deleting it is
+// handled separately via the "Show on site" (is_active) toggle.
+export const deleteServiceForPractitioner = async (id, practitionerId) => {
     const { data, error } = await supabase
         .from('services')
         .delete()
         .eq('id', id)
+        .eq('practitioner_id', practitionerId)
         .select()
         .maybeSingle();
 

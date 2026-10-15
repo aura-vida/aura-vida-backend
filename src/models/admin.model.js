@@ -194,15 +194,3 @@ export const updatePractitionerStatus = async (practitionerId, status) => {
     return data;
 };
 
-export const updatePractitionerServices = async (practitionerId, serviceIds) => {
-    const { error: deleteErr } = await supabase.from('practitioner_services').delete().eq('practitioner_id', practitionerId);
-    if (deleteErr && deleteErr.code !== 'PGRST116') throw deleteErr;
-
-    if (Array.isArray(serviceIds) && serviceIds.length > 0) {
-        const inserts = serviceIds.map(sid => ({ practitioner_id: practitionerId, service_id: sid }));
-        const { data, error } = await supabase.from('practitioner_services').insert(inserts).select();
-        if (error) throw error;
-        return data;
-    }
-    return { message: 'Services cleared' };
-};
