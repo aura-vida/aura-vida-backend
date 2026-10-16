@@ -14,7 +14,10 @@ import crypto from 'crypto';
 import { supabase } from '../src/config/supabase.js';
 import { sendEmail } from '../src/services/email.service.js';
 
-const DEPLOYED_SITE_URL = 'https://aura-vida-frontend.vercel.app';
+// Falls back to the production domain (not localhost) if SITE_URL isn't set,
+// since this script's whole purpose is sending links that work for real
+// practitioners — a silent localhost fallback here would defeat that.
+const DEPLOYED_SITE_URL = process.env.SITE_URL || 'https://www.kusala.in';
 
 const TEMP_PASSWORD_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
 const generateTempPassword = () => {
