@@ -39,7 +39,7 @@ export const listPublicSpaces = async (pin) => {
             .from('partner_spaces')
             .select(PUBLIC_SPACE_COLUMNS)
             .eq('pin', pin)
-            .in('status', ['approved', 'contacted', 'new'])
+            .eq('status', 'approved')
             .order('sort_order', { foreignTable: 'space_images', ascending: true });
 
         if (!exactErr && exact && exact.length > 0) return exact;
@@ -50,7 +50,7 @@ export const listPublicSpaces = async (pin) => {
             .from('partner_spaces')
             .select(PUBLIC_SPACE_COLUMNS)
             .ilike('pin', `${prefix3}%`)
-            .in('status', ['approved', 'contacted', 'new'])
+            .eq('status', 'approved')
             .order('sort_order', { foreignTable: 'space_images', ascending: true });
 
         if (regional3 && regional3.length > 0) return regional3;
@@ -61,17 +61,17 @@ export const listPublicSpaces = async (pin) => {
             .from('partner_spaces')
             .select(PUBLIC_SPACE_COLUMNS)
             .ilike('pin', `${prefix2}%`)
-            .in('status', ['approved', 'contacted', 'new'])
+            .eq('status', 'approved')
             .order('sort_order', { foreignTable: 'space_images', ascending: true });
 
         if (regional2 && regional2.length > 0) return regional2;
     }
 
-    // 3. Fallback: return all active partner spaces
+    // 3. Fallback: return all approved partner spaces
     const { data: allSpaces, error } = await supabase
         .from('partner_spaces')
         .select(PUBLIC_SPACE_COLUMNS)
-        .in('status', ['approved', 'contacted', 'new'])
+        .eq('status', 'approved')
         .order('sort_order', { foreignTable: 'space_images', ascending: true })
         .limit(10);
 
