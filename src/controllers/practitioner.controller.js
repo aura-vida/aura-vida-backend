@@ -14,7 +14,7 @@ import {
     approvePractitioner,
 } from '../models/practitioner.model.js';
 import { supabase } from '../config/supabase.js';
-import { notifyAdmins } from '../models/notification.model.js';
+import { notifyAdmins, emailAdmins } from '../models/notification.model.js';
 
 // ─── Public ───────────────────────────────────────────────────────────────────
 
@@ -65,13 +65,31 @@ export const applyToJoinAsPractitioner = async (req, res) => {
     try {
         const data = await applyPractitioner(req.body);
 
-        // Notify admins asynchronously (non-blocking)
+        // Notify admins asynchronously (non-blocking) — both the in-app bell
+        // and a real email, since a new application shouldn't rely on an
+        // admin happening to be logged in and looking at the bell.
         try {
             await notifyAdmins(
                 'New Practitioner Application',
                 `${data.name} applied for ${data.craft || 'Holistic Practitioner'}.`,
                 'practitioner',
                 data.id
+            );
+            await emailAdmins(
+                `New Practitioner Application — ${data.name}`,
+                `
+                  <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:32px;border-radius:16px;border:1px solid #e5e7eb;">
+                    <h1 style="font-size:20px;color:#1a5c38;margin-bottom:4px;">New Practitioner Application</h1>
+                    <p style="color:#555;">A new practitioner has applied to join Kusala.</p>
+                    <table style="width:100%;font-size:14px;color:#333;border-collapse:collapse;margin-top:12px;">
+                      <tr><td style="padding:6px 0;color:#888;">Name</td><td style="padding:6px 0;font-weight:600;text-align:right;">${data.name}</td></tr>
+                      <tr><td style="padding:6px 0;color:#888;">Craft</td><td style="padding:6px 0;font-weight:600;text-align:right;">${data.craft || 'Holistic Practitioner'}</td></tr>
+                      <tr><td style="padding:6px 0;color:#888;">City</td><td style="padding:6px 0;font-weight:600;text-align:right;">${data.city || '—'}</td></tr>
+                      <tr><td style="padding:6px 0;color:#888;">Application Email</td><td style="padding:6px 0;font-weight:600;text-align:right;">${data.application_email || '—'}</td></tr>
+                    </table>
+                    <p style="color:#888;font-size:12px;margin-top:20px;">Review and approve this application from the Admin Dashboard.</p>
+                  </div>
+                `
             );
         } catch (_) {}
 

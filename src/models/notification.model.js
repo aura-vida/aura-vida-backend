@@ -1,4 +1,5 @@
 import { supabase } from '../config/supabase.js';
+import { sendEmail } from '../services/email.service.js';
 
 export const getUserNotifications = async (userId, limit = 20) => {
     const { data, error } = await supabase
@@ -81,5 +82,49 @@ export const notifyAdmins = async (title, message, type = 'info', referenceId = 
     } catch (err) {
         console.error('Error in notifyAdmins:', err);
         return [];
+    }
+};
+
+/**
+ * Resolves every admin's email address. user_roles only has user ids —
+ * emails live in auth.users, which isn't joinable via PostgREST, so this
+ * goes through the Admin API to match them up.
+ */
+export const getAdminEmails = async () => {
+    const { data: adminRoles, error: rolesError } = await supabase
+        .from('user_roles')
+        .select('user_id')
+        .eq('role', 'admin');
+
+    if (rolesError) {
+        console.error('Failed to fetch admin roles:', rolesError.message);
+        return [];
+    }
+    if (!adminRoles || adminRoles.length === 0) return [];
+
+    const adminIds = new Set(adminRoles.map((r) => r.user_id));
+    const { data: authData, error: authErr } = await supabase.auth.admin.listUsers();
+    if (authErr) {
+        console.error('Failed to fetch admin emails:', authErr.message);
+        return [];
+    }
+
+    return (authData?.users || [])
+        .filter((u) => adminIds.has(u.id) && u.email)
+        .map((u) => u.email);
+};
+
+/**
+ * Emails every admin — the counterpart to notifyAdmins' in-app notification,
+ * for events where an admin should also get a real email (not just the bell).
+ */
+export const emailAdmins = async (subject, html) => {
+    try {
+        const recipients = await getAdminEmails();
+        if (recipients.length === 0) return null;
+        return await sendEmail({ to: recipients, subject, html });
+    } catch (err) {
+        console.error('Error in emailAdmins:', err);
+        return null;
     }
 };

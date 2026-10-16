@@ -35,6 +35,7 @@ const allowedOrigins = [
     'http://3.107.114.205:5000',
     'https://kusalabackend.duckdns.org',
     'https://pizza-circumstances-knives-governments.trycloudflare.com',
+    'https://www.kusala.in',
     process.env.FRONTEND_URL,
 ].filter(Boolean);
 

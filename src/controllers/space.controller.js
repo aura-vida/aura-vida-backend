@@ -11,7 +11,7 @@ import {
     addSpaceImages,
     deleteSpaceImage,
 } from '../models/space.model.js';
-import { notifyAdmins } from '../models/notification.model.js';
+import { notifyAdmins, emailAdmins } from '../models/notification.model.js';
 import { uploadImageWithPath } from '../middleware/upload.middleware.js';
 
 const VALID_STATUSES = ['new', 'contacted', 'approved', 'declined'];
@@ -135,13 +135,32 @@ export const submitSpace = async (req, res) => {
             }
         }
 
-        // Notify admins asynchronously (non-blocking)
+        // Notify admins asynchronously (non-blocking) — both the in-app bell
+        // and a real email, since a new submission shouldn't rely on an
+        // admin happening to be logged in and looking at the bell.
         try {
             await notifyAdmins(
                 'New Space Submission',
                 `${data.space_name} in ${data.city} submitted by ${data.contact_name}.`,
                 'space',
                 data.id
+            );
+            await emailAdmins(
+                `New Partner Space Submission — ${data.space_name}`,
+                `
+                  <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:32px;border-radius:16px;border:1px solid #e5e7eb;">
+                    <h1 style="font-size:20px;color:#1a5c38;margin-bottom:4px;">New Partner Space Submission</h1>
+                    <p style="color:#555;">Someone has submitted a space to be listed as a Kusala partner location.</p>
+                    <table style="width:100%;font-size:14px;color:#333;border-collapse:collapse;margin-top:12px;">
+                      <tr><td style="padding:6px 0;color:#888;">Space Name</td><td style="padding:6px 0;font-weight:600;text-align:right;">${data.space_name}</td></tr>
+                      <tr><td style="padding:6px 0;color:#888;">Contact</td><td style="padding:6px 0;font-weight:600;text-align:right;">${data.contact_name}</td></tr>
+                      <tr><td style="padding:6px 0;color:#888;">Email</td><td style="padding:6px 0;font-weight:600;text-align:right;">${data.email}</td></tr>
+                      <tr><td style="padding:6px 0;color:#888;">City</td><td style="padding:6px 0;font-weight:600;text-align:right;">${data.city}</td></tr>
+                      <tr><td style="padding:6px 0;color:#888;">Capacity</td><td style="padding:6px 0;font-weight:600;text-align:right;">${data.capacity}</td></tr>
+                    </table>
+                    <p style="color:#888;font-size:12px;margin-top:20px;">Review and approve this space from the Admin Dashboard.</p>
+                  </div>
+                `
             );
         } catch (_) {}
 
