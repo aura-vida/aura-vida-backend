@@ -139,7 +139,27 @@ export const calculateAvailableSlots = async (slug, dateStr, spaceId = null) => 
         .eq('is_active', true);
 
     if (schedErr) throw schedErr;
-    const effectiveSchedules = schedules || [];
+    let effectiveSchedules = schedules || [];
+
+    // If no schedule exists for this specific day, check if the practitioner
+    // has configured ANY availability across the entire week.
+    if (effectiveSchedules.length === 0) {
+        const { count: totalConfigured } = await supabase
+            .from('availability')
+            .select('*', { count: 'exact', head: true })
+            .eq('practitioner_slug', slug)
+            .eq('is_active', true);
+
+        // If the practitioner has never set up a custom schedule, default to
+        // standard business hours (09:00 - 18:00, 60m duration) so they are bookable.
+        if (!totalConfigured || totalConfigured === 0) {
+            effectiveSchedules = [{
+                start_time: '09:00:00',
+                end_time: '18:00:00',
+                duration_min: 60,
+            }];
+        }
+    }
 
     // 2. Get all exceptions for that day
     const { data: exceptions } = await supabase
