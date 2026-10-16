@@ -227,7 +227,7 @@ const createPractitionerAccount = async ({ slug, name, email }) => {
         // click "Send reset link" there, so it can never collide.
         const resetUrl = `${siteUrl}/auth?view=forgot&email=${encodeURIComponent(email)}`;
 
-        await sendEmail({
+        const emailResult = await sendEmail({
             to: email,
             subject: 'Your Kusala Practitioner account is ready',
             html: `
@@ -254,6 +254,9 @@ const createPractitionerAccount = async ({ slug, name, email }) => {
               </div>
             `,
         });
+        console.log(emailResult
+            ? `✅ [PRACTITIONER] Welcome email sent to ${email} (${name})`
+            : `❌ [PRACTITIONER] Welcome email FAILED to send to ${email} (${name})`);
     }
 
     return authUserId;
@@ -267,9 +270,9 @@ const createPractitionerAccount = async ({ slug, name, email }) => {
  * be a directory listing only, with no way to ever log into the Guide Portal.
  */
 export const createPractitioner = async (fields) => {
-    // rating is system-computed from customer reviews — never admin-settable,
-    // even on creation.
-    const { email, mobile_number, whatsapp_number, name, rating, ...rest } = fields;
+    // rating and sessions are system-computed from customer reviews — never
+    // admin-settable, even on creation.
+    const { email, mobile_number, whatsapp_number, name, rating, sessions, ...rest } = fields;
 
     if (!name || !String(name).trim()) {
         const err = new Error('Name is required.');
@@ -438,7 +441,7 @@ export const updateOwnPractitionerProfile = async (practitionerSlug, fields) => 
  */
 export const applyPractitioner = async (fields) => {
     const {
-        name, email, bio, craft, city, sessions, price_inr,
+        name, email, bio, craft, city, price_inr,
         mobile_number, whatsapp_number,
     } = fields;
 
@@ -471,9 +474,9 @@ export const applyPractitioner = async (fields) => {
             bio: bio?.trim() || null,
             craft: craft?.trim() || null,
             city: city?.trim() || null,
-            // rating is never accepted from a client/applicant — it starts at
-            // the DB default (0) and is only ever set by the review trigger.
-            sessions: parseInt(sessions) || 0,
+            // rating and sessions are never accepted from a client/applicant —
+            // both start at their DB defaults (0) and are only ever set by
+            // the review trigger.
             price_inr: parseInt(price_inr) || 0,
             mobile_number: mobile_number.trim(),
             whatsapp_number: whatsapp_number.trim(),

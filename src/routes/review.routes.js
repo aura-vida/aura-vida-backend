@@ -33,6 +33,21 @@ router.get('/practitioner/:id', reviewController.listPractitionerReviews);
 
 /**
  * @swagger
+ * /api/reviews/mine:
+ *   get:
+ *     summary: List my own submitted reviews (client self-service)
+ *     description: Lets the booking list show "already reviewed" instead of offering the form again.
+ *     tags: [Reviews]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of reviews submitted by the logged-in client.
+ */
+router.get('/mine', requireAuth, requireRole('client'), reviewController.getMyReviews);
+
+/**
+ * @swagger
  * /api/reviews:
  *   post:
  *     summary: Submit a review for a practitioner (REVIEW-002)

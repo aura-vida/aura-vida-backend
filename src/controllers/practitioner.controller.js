@@ -135,9 +135,9 @@ export const adminCreatePractitioner = async (req, res) => {
  */
 export const adminUpdatePractitioner = async (req, res) => {
     try {
-        // rating is system-computed from customer reviews — admins cannot set
-        // it directly, even through a generic update payload.
-        const { rating, ...fields } = req.body;
+        // rating and sessions are system-computed from customer reviews —
+        // admins cannot set them directly, even through a generic update payload.
+        const { rating, sessions, ...fields } = req.body;
         const data = await updatePractitionerById(req.params.id, fields);
         res.status(200).json({ message: 'Practitioner updated successfully', practitioner: data });
     } catch (error) {
@@ -232,12 +232,9 @@ export const updateMyPractitionerProfile = async (req, res) => {
         if (updatePayload.price_inr) {
             updatePayload.price_inr = Number(updatePayload.price_inr);
         }
-        if (updatePayload.rating) {
-            updatePayload.rating = Number(updatePayload.rating);
-        }
-        if (updatePayload.sessions) {
-            updatePayload.sessions = Number(updatePayload.sessions);
-        }
+        // rating and sessions are system-computed from customer reviews —
+        // updateOwnPractitionerProfile's allowedFields whitelist already
+        // excludes them regardless of what's sent here.
 
         // Try to parse keywords if it's sent as a JSON string array from FormData
         if (typeof updatePayload.keywords === 'string') {

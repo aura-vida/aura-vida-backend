@@ -54,6 +54,16 @@ export const createReview = async (req, res) => {
     }
 };
 
+export const getMyReviews = async (req, res) => {
+    try {
+        const reviews = await reviewModel.listReviewsByClient(req.user.id);
+        res.status(200).json({ reviews });
+    } catch (error) {
+        console.error('getMyReviews error:', error);
+        res.status(500).json({ error: error.message || 'Failed to fetch your reviews' });
+    }
+};
+
 export const moderateReview = async (req, res) => {
     try {
         const { status } = req.body;

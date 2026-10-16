@@ -54,8 +54,29 @@ export const createReview = async (fields) => {
         .insert([{ ...fields, status: 'pending' }])
         .select()
         .single();
-    if (error) throw error;
+    if (error) {
+        // Unique violation on reviews_booking_id_unique — this booking was
+        // already reviewed (e.g. a race between two tabs submitting at once).
+        if (error.code === '23505') {
+            throw Object.assign(new Error('You already reviewed this session.'), { statusCode: 409 });
+        }
+        throw error;
+    }
     return data;
+};
+
+/**
+ * A client's own submitted reviews — lets the booking list show "already
+ * reviewed" instead of offering the form again.
+ */
+export const listReviewsByClient = async (clientId) => {
+    const { data, error } = await supabase
+        .from('reviews')
+        .select('id, practitioner_id, booking_id, rating, comment, status, created_at')
+        .eq('client_id', clientId)
+        .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
 };
 
 export const updateReviewStatus = async (id, status) => {
