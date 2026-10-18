@@ -13,6 +13,7 @@ import {
     adminGetPractitionerById,
     applyToJoinAsPractitioner,
     adminApprovePractitioner,
+    adminUploadPractitionerPhoto,
 } from '../controllers/practitioner.controller.js';
 import {
     getMyServices,
@@ -496,5 +497,11 @@ router.patch('/admin/practitioners/:id/status', requireAuth, requireRole('admin'
  * Approve a pending practitioner – creates their auth account and sends invite email
  */
 router.post('/admin/practitioners/:id/approve', requireAuth, requireRole('admin'), adminApprovePractitioner);
+
+/**
+ * ADMIN: POST /api/admin/practitioners/:id/photo
+ * Upload or replace a practitioner photo (bypasses storage RLS via service role)
+ */
+router.post('/admin/practitioners/:id/photo', requireAuth, requireRole('admin'), upload.single('photo'), adminUploadPractitionerPhoto);
 
 export default router;

@@ -299,3 +299,52 @@ export const updateMyPractitionerProfile = async (req, res) => {
         res.status(status).json({ error: error.message || 'Failed to update practitioner profile' });
     }
 };
+
+/**
+ * POST /api/admin/practitioners/:id/photo
+ * Admin only. Upload a practitioner photo using Supabase Service Role Key (bypassing RLS).
+ */
+export const adminUploadPractitionerPhoto = async (req, res) => {
+    try {
+        const file = req.file;
+        if (!file) {
+            return res.status(400).json({ error: 'Image file is required.' });
+        }
+
+        const ext = file.originalname.split('.').pop() || 'jpg';
+        const filename = `${req.params.id}/${Date.now()}.${ext}`;
+
+        const { error: uploadError } = await supabase.storage
+            .from('practitioner-photos')
+            .upload(filename, file.buffer, {
+                contentType: file.mimetype,
+                upsert: true,
+            });
+
+        if (uploadError) {
+            return res.status(400).json({ error: `Image upload failed: ${uploadError.message}` });
+        }
+
+        const SIGNED_URL_TTL = 60 * 60 * 24 * 365 * 5; // 5 years
+        const { data: signed, error: signErr } = await supabase.storage
+            .from('practitioner-photos')
+            .createSignedUrl(filename, SIGNED_URL_TTL);
+
+        if (signErr || !signed) {
+            return res.status(500).json({ error: signErr?.message ?? 'Could not create photo link' });
+        }
+
+        const updated = await updatePractitionerById(req.params.id, { image_url: signed.signedUrl });
+
+        res.status(200).json({
+            message: 'Practitioner photo updated successfully',
+            imageUrl: signed.signedUrl,
+            practitioner: updated,
+        });
+    } catch (error) {
+        console.error('adminUploadPractitionerPhoto error:', error);
+        const status = error.statusCode || 500;
+        res.status(status).json({ error: error.message || 'Failed to upload practitioner photo' });
+    }
+};
+
