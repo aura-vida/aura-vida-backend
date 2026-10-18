@@ -117,6 +117,18 @@ app.get('/api/health/supabase', async (req, res) => {
     }
 });
 
+// Global error handling middleware (handles multer file errors, payload issues, etc.)
+app.use((err, req, res, next) => {
+    if (err) {
+        console.error('API Error:', err.message || err);
+        const status = err.status || err.statusCode || 400;
+        return res.status(status).json({
+            error: err.message || 'An error occurred while processing the request.',
+        });
+    }
+    next();
+});
+
 app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
     console.log(`Swagger API Docs: http://localhost:${PORT}/api-docs`);

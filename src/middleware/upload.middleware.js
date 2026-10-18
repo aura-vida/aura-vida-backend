@@ -7,13 +7,13 @@ const storage = multer.memoryStorage();
 
 export const upload = multer({
     storage,
-    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB max
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max
     fileFilter: (req, file, cb) => {
-        const allowedTypes = /jpeg|jpg|png|webp/;
-        const ext = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-        const mime = allowedTypes.test(file.mimetype);
-        if (ext && mime) return cb(null, true);
-        cb(new Error('Only JPEG, JPG, PNG, and WEBP images are allowed.'));
+        const allowedExt = /\.(jpeg|jpg|png|webp|avif)$/i;
+        const ext = allowedExt.test(path.extname(file.originalname).toLowerCase());
+        const mime = /image\/(jpeg|jpg|png|webp|avif)/i.test(file.mimetype) || file.mimetype.startsWith('image/');
+        if (ext || mime) return cb(null, true);
+        cb(new Error('Only JPEG, JPG, PNG, and WEBP images are allowed. If uploading from an iPhone, please select a JPG or PNG instead of HEIC.'));
     },
 });
 
