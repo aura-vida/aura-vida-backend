@@ -139,7 +139,7 @@ export const adminUpdateSpace = async (id, fields) => {
             updated_at: new Date().toISOString(),
         })
         .eq('id', id)
-        .select()
+        .select('*, space_images(id, image_url, sort_order)')
         .maybeSingle();
 
     if (error) throw error;
@@ -155,7 +155,7 @@ export const updateSpaceStatus = async (id, status) => {
         .from('partner_spaces')
         .update({ status, updated_at: new Date().toISOString() })
         .eq('id', id)
-        .select()
+        .select('*, space_images(id, image_url, sort_order)')
         .maybeSingle();
 
     if (error) throw error;
