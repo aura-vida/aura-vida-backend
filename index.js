@@ -3,6 +3,8 @@ const require = createRequire(import.meta.url);
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import multer from 'multer';
+import { IMAGE_TOO_LARGE_MESSAGE } from './src/middleware/upload.middleware.js';
 import swaggerUi from 'swagger-ui-express';
 import authRoutes from './src/routes/auth.routes.js';
 import userRoutes from './src/routes/user.routes.js';
@@ -117,14 +119,23 @@ app.get('/api/health/supabase', async (req, res) => {
     }
 });
 
-// Global error handling middleware (handles multer file errors, payload issues, etc.)
+// ── Global error handler ───────────────────────────────────────
+// Catches multer errors (oversized file, disallowed type) from any upload
+// route and turns them into a clear JSON response instead of falling
+// through to Express's default HTML error page.
 app.use((err, req, res, next) => {
+    if (err instanceof multer.MulterError) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+            return res.status(400).json({ error: IMAGE_TOO_LARGE_MESSAGE });
+        }
+        return res.status(400).json({ error: err.message });
+    }
+    if (err?.message?.includes('Only JPEG, JPG, PNG, and WEBP images are allowed.')) {
+        return res.status(400).json({ error: err.message });
+    }
     if (err) {
-        console.error('API Error:', err.message || err);
-        const status = err.status || err.statusCode || 400;
-        return res.status(status).json({
-            error: err.message || 'An error occurred while processing the request.',
-        });
+        console.error(err);
+        return res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
     next();
 });

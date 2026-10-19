@@ -167,7 +167,7 @@ const sendPaymentReceiptEmail = async (order, paymentId) => {
               <tr><td style="padding:8px 0;font-weight:700;">Total Paid</td><td style="padding:8px 0;font-weight:700;text-align:right;">₹${amountInr}</td></tr>
             </table>
             <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0;">
-            <p style="font-size:12px;color:#aaa;">This is an automated receipt for your records. Kusala &bull; Questions? Reply to this email or visit auravida.com</p>
+            <p style="font-size:12px;color:#aaa;">This is an automated receipt for your records. Kusala &bull; Questions? Reply to this email or visit kusala.in</p>
           </div>
         `,
     });
@@ -441,7 +441,7 @@ export const markOrderPaidAndConfirmBooking = async (orderId, paymentId) => {
                             </table>
                             ${meetSection}
                             <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0;">
-                            <p style="font-size:12px;color:#aaa;">Kusala &bull; Questions? Reply to this email or visit auravida.com</p>
+                            <p style="font-size:12px;color:#aaa;">Kusala &bull; Questions? Reply to this email or visit kusala.in</p>
                           </div>
                         `,
                     })

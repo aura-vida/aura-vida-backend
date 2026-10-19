@@ -3,6 +3,13 @@ import { supabase } from '../config/supabase.js';
 import { isValidPhoneNumber } from '../utils/validation.js';
 import { sendEmail } from '../services/email.service.js';
 
+// Human-readable copy of the magic-link token's lifetime, shown in the
+// welcome email. The actual expiry is a Supabase project Auth setting
+// (Authentication > Email > "Email OTP Expiration"), not something this
+// codebase controls — keep this string in sync with whatever that's set to.
+// Hosted Supabase projects cap this setting at 86400 seconds (24 hours).
+const MAGIC_LINK_EXPIRY_LABEL = '24 hours';
+
 // Avoids visually ambiguous characters (0/O, 1/l/I) since this gets typed by hand.
 const TEMP_PASSWORD_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
 const generateTempPassword = () => {
@@ -226,6 +233,7 @@ const createPractitionerAccount = async ({ slug, name, email }) => {
         // the actual recovery token only gets generated on demand when they
         // click "Send reset link" there, so it can never collide.
         const resetUrl = `${siteUrl}/auth?view=forgot&email=${encodeURIComponent(email)}`;
+        const loginUrl = `${siteUrl}/auth?email=${encodeURIComponent(email)}`;
 
         const emailResult = await sendEmail({
             to: email,
@@ -236,7 +244,8 @@ const createPractitionerAccount = async ({ slug, name, email }) => {
                 <p style="color:#555;margin-top:0;">An account has been created for you on the Kusala Guide Portal.</p>
                 ${magicLinkUrl ? `
                 <a href="${magicLinkUrl}" style="display:inline-block;margin-top:12px;padding:12px 28px;background:#1a5c38;color:#fff;text-decoration:none;border-radius:999px;font-weight:600;font-size:14px;">Log In Instantly</a>
-                <p style="color:#888;font-size:12px;margin:10px 0 0;">One-click login, no password needed. This link can only be used once.</p>
+                <p style="color:#888;font-size:12px;margin:10px 0 0;">One-click login, no password needed. This link expires in ${MAGIC_LINK_EXPIRY_LABEL} and can only be used once.</p>
+                <p style="color:#aaa;font-size:11px;margin:10px 0 0;">Button not working? Copy and paste this link into your browser:<br><a href="${magicLinkUrl}" style="color:#1a5c38;word-break:break-all;">${magicLinkUrl}</a></p>
                 <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;">
                 ` : ''}
                 <p style="color:#555;">Prefer to log in manually? Use this temporary password:</p>
@@ -246,11 +255,12 @@ const createPractitionerAccount = async ({ slug, name, email }) => {
                   <p style="margin:0;font-size:12px;color:#888;text-transform:uppercase;letter-spacing:0.05em;">Temporary Password</p>
                   <p style="margin:4px 0 0;font-size:18px;font-family:monospace;font-weight:700;color:#111;letter-spacing:0.03em;">${tempPassword}</p>
                 </div>
+                <a href="${loginUrl}" style="display:inline-block;margin-bottom:20px;padding:12px 28px;background:#1a5c38;color:#fff;text-decoration:none;border-radius:999px;font-weight:600;font-size:14px;">Go to Login</a>
                 <p style="color:#555;">For security, please set your own password as soon as you log in.</p>
                 <a href="${resetUrl}" style="display:inline-block;margin-top:8px;padding:12px 28px;background:#fff;color:#1a5c38;text-decoration:none;border-radius:999px;font-weight:600;font-size:14px;border:1.5px solid #1a5c38;">Reset Your Password</a>
                 <p style="color:#888;font-size:12px;margin:10px 0 0;">Takes you to a form to request a reset link by email.</p>
                 <hr style="border:none;border-top:1px solid #e5e7eb;margin:28px 0 16px;">
-                <p style="font-size:12px;color:#aaa;">Kusala &bull; Questions? Reply to this email or visit auravida.com</p>
+                <p style="font-size:12px;color:#aaa;">Kusala &bull; Questions? Reply to this email or visit kusala.in</p>
               </div>
             `,
         });

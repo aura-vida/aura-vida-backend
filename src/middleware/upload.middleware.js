@@ -5,15 +5,20 @@ import path from 'path';
 // Store file in memory buffer, then upload to Supabase Storage
 const storage = multer.memoryStorage();
 
+export const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
+export const IMAGE_TOO_LARGE_MESSAGE = 'Image must be smaller than 5MB.';
+
 export const upload = multer({
     storage,
-    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max
+    // Reject files that are 5MB or larger; multer's limit check is exclusive
+    // (rejects only when size exceeds it), so subtract 1 byte to make 5MB itself fail too.
+    limits: { fileSize: MAX_IMAGE_SIZE_BYTES - 1 },
     fileFilter: (req, file, cb) => {
-        const allowedExt = /\.(jpeg|jpg|png|webp|avif)$/i;
-        const ext = allowedExt.test(path.extname(file.originalname).toLowerCase());
-        const mime = /image\/(jpeg|jpg|png|webp|avif)/i.test(file.mimetype) || file.mimetype.startsWith('image/');
-        if (ext || mime) return cb(null, true);
-        cb(new Error('Only JPEG, JPG, PNG, and WEBP images are allowed. If uploading from an iPhone, please select a JPG or PNG instead of HEIC.'));
+        const allowedTypes = /jpeg|jpg|png|webp/;
+        const ext = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+        const mime = allowedTypes.test(file.mimetype);
+        if (ext && mime) return cb(null, true);
+        cb(new Error('Only JPEG, JPG, PNG, and WEBP images are allowed.'));
     },
 });
 
