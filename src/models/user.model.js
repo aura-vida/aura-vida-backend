@@ -206,5 +206,32 @@ export const getUserAppointments = async (userId, filters = {}) => {
 
     const { data, error, count } = await query;
     if (error) throw error;
+
+    // The practitioner's WhatsApp number is only shared with a client once
+    // they have at least one confirmed (or completed) booking with them —
+    // it's not part of the public practitioner listing, so it has to be
+    // fetched and attached here rather than coming from the bookings table.
+    const slugsAllowed = [...new Set(
+        data.filter((b) => ['confirmed', 'completed'].includes(b.status) && b.practitioner_slug)
+            .map((b) => b.practitioner_slug)
+    )];
+
+    if (slugsAllowed.length > 0) {
+        const { data: practitioners } = await supabase
+            .from('practitioners')
+            .select('slug, whatsapp_number')
+            .in('slug', slugsAllowed);
+
+        const whatsappBySlug = Object.fromEntries(
+            (practitioners || []).map((p) => [p.slug, p.whatsapp_number])
+        );
+
+        data.forEach((b) => {
+            if (['confirmed', 'completed'].includes(b.status) && b.practitioner_slug) {
+                b.practitioner_whatsapp_number = whatsappBySlug[b.practitioner_slug] || null;
+            }
+        });
+    }
+
     return { data, pagination: { page, limit, total: count, totalPages: Math.ceil(count / limit) } };
 };

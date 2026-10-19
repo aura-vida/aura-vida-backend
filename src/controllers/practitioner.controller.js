@@ -21,10 +21,20 @@ import { notifyAdmins, emailAdmins } from '../models/notification.model.js';
 /**
  * PRAC-001: GET /api/practitioners
  */
+// The practitioner directory and public profile are visible to anyone,
+// logged in or not — WhatsApp/mobile numbers are only ever shared with a
+// client once they have a confirmed booking (see getUserAppointments),
+// so strip them here before the response leaves the server.
+const hidePrivateContact = (practitioner) => {
+    if (!practitioner) return practitioner;
+    const { whatsapp_number, mobile_number, ...rest } = practitioner;
+    return rest;
+};
+
 export const getPractitioners = async (req, res) => {
     try {
         const { data, pagination } = await listPractitioners(req.query);
-        res.status(200).json({ practitioners: data, pagination });
+        res.status(200).json({ practitioners: data.map(hidePrivateContact), pagination });
     } catch (error) {
         console.error('getPractitioners error:', error);
         res.status(500).json({ error: 'Failed to fetch practitioners' });
@@ -38,7 +48,7 @@ export const getPractitionerProfile = async (req, res) => {
     try {
         const data = await getPractitionerBySlug(req.params.slug);
         if (!data) return res.status(404).json({ error: 'Practitioner not found' });
-        res.status(200).json({ practitioner: data });
+        res.status(200).json({ practitioner: hidePrivateContact(data) });
     } catch (error) {
         console.error('getPractitionerProfile error:', error);
         res.status(404).json({ error: 'Practitioner not found' });
