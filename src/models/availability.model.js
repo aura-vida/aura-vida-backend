@@ -9,7 +9,8 @@ export const getPractitionerSchedule = async (slug) => {
         .select('*')
         .eq('practitioner_slug', slug)
         .eq('is_active', true)
-        .order('day_of_week', { ascending: true });
+        .order('day_of_week', { ascending: true })
+        .order('start_time', { ascending: true });
 
     if (error) throw error;
     return data;
@@ -136,7 +137,8 @@ export const calculateAvailableSlots = async (slug, dateStr, spaceId = null) => 
         .select('*')
         .eq('practitioner_slug', slug)
         .eq('day_of_week', dayOfWeek)
-        .eq('is_active', true);
+        .eq('is_active', true)
+        .order('start_time', { ascending: true });
 
     if (schedErr) throw schedErr;
     let effectiveSchedules = schedules || [];
@@ -289,6 +291,9 @@ export const calculateAvailableSlots = async (slug, dateStr, spaceId = null) => 
             });
         }
     }
+
+    // Ensure all returned slots are sorted chronologically
+    slots.sort((a, b) => a.start.localeCompare(b.start));
 
     return slots;
 };

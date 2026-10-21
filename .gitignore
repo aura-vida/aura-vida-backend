@@ -36,5 +36,6 @@ Thumbs.db
 # npm cache
 .npm
 
-# Testing coverage
+# Testing coverage & scratch scripts
 coverage
+test_*.js
