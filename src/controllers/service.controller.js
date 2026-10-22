@@ -8,7 +8,7 @@ import {
     deleteServiceForPractitioner,
 } from '../models/service.model.js';
 import { getPractitionerByUserId } from '../models/practitioner.model.js';
-import { uploadToSupabase } from '../middleware/upload.middleware.js';
+import { uploadImage } from '../middleware/upload.middleware.js';
 
 // SERVICE-001
 export const getServices = async (req, res) => {
@@ -69,7 +69,7 @@ export const createMyService = async (req, res) => {
 
         let image_url = req.body.image_url || null;
         if (req.file) {
-            image_url = await uploadToSupabase(req.file.buffer, req.file.originalname, 'services');
+            image_url = await uploadImage(req.file.buffer, req.file.originalname, 'services');
         }
 
         const service = await createServiceForPractitioner(practitioner.id, {
@@ -105,7 +105,7 @@ export const updateMyService = async (req, res) => {
         }
 
         if (req.file) {
-            fields.image_url = await uploadToSupabase(req.file.buffer, req.file.originalname, 'services');
+            fields.image_url = await uploadImage(req.file.buffer, req.file.originalname, 'services');
         }
 
         const service = await updateServiceForPractitioner(req.params.id, practitioner.id, fields);

@@ -1,6 +1,7 @@
 import { supabase } from '../config/supabase.js';
 import { parseSpaceAvailability, formatSpaceScheduleSummary } from '../utils/spaceAvailability.js';
 import { sendSpaceReservationEmail } from '../services/email.service.js';
+import { deleteObject } from '../services/s3.service.js';
 
 const sanitizeSpaceFields = (fields) => {
     const sanitized = { ...fields };
@@ -326,7 +327,7 @@ export const deleteSpaceImage = async (imageId) => {
     // Best-effort — the DB row is already gone either way, so an orphaned
     // storage object isn't worth failing the request over.
     try {
-        await supabase.storage.from('images').remove([data.storage_path]);
+        await deleteObject(data.storage_path);
     } catch (_) {}
 
     return data;
