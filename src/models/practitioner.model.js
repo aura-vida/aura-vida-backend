@@ -37,7 +37,7 @@ export const listPractitioners = async (filters = {}) => {
         .order('created_at', { ascending: false });
 
     if (filters.craft) query = query.eq('craft', filters.craft);
-    if (filters.city) query = query.eq('city', filters.city);
+    if (filters.city) query = query.ilike('city', filters.city.trim());
     if (filters.bookable) query = query.eq('bookable', filters.bookable === 'true');
 
     query = query.range(from, to);

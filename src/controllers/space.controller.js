@@ -174,12 +174,8 @@ export const submitSpace = async (req, res) => {
 // GET /api/spaces  — public search by PIN
 export const getPublicSpaces = async (req, res) => {
     try {
-        const { pin } = req.query;
-        if (!pin) {
-            return res.status(400).json({ error: 'pin query parameter is required.' });
-        }
-
-        const spaces = await listPublicSpaces(pin);
+        const { pin, city } = req.query;
+        const spaces = await listPublicSpaces(pin, city);
         res.status(200).json({ spaces });
     } catch (err) {
         console.error('getPublicSpaces error:', err);
