@@ -91,6 +91,31 @@ app.use('/api', waitlistRoutes);
 app.use('/api', spaceRoutes);
 app.use('/api', couponRoutes);
 
+// Image proxy to safely load and crop S3 / remote images in frontend without CORS blockage
+app.get('/api/proxy-image', async (req, res) => {
+    try {
+        const targetUrl = req.query.url;
+        if (!targetUrl || typeof targetUrl !== 'string') {
+            return res.status(400).json({ error: 'url query parameter is required' });
+        }
+        if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+            return res.status(400).json({ error: 'Invalid URL scheme' });
+        }
+        const imgResponse = await fetch(targetUrl);
+        if (!imgResponse.ok) {
+            return res.status(imgResponse.status).json({ error: 'Failed to fetch remote image' });
+        }
+        const contentType = imgResponse.headers.get('content-type') || 'image/jpeg';
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        const arrayBuffer = await imgResponse.arrayBuffer();
+        res.send(Buffer.from(arrayBuffer));
+    } catch (err) {
+        console.error('Image proxy error:', err);
+        res.status(500).json({ error: 'Image proxy error: ' + err.message });
+    }
+});
+
 // Test route
 app.get('/', (req, res) => {
     res.send('Kusala Backend is running. Visit /api-docs for the API documentation.');
