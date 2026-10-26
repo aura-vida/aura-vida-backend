@@ -33,7 +33,7 @@ export const createSpace = async (fields) => {
  */
 const PUBLIC_SPACE_COLUMNS = 'id, space_name, address, city, pin, capacity, space_type, amenities, availability, notes, status, space_images(id, image_url, sort_order)';
 
-export const listPublicSpaces = async (pin) => {
+export const listPublicSpaces = async (pin, city) => {
     if (pin) {
         // 1. Exact match
         const { data: exact, error: exactErr } = await supabase
@@ -68,13 +68,25 @@ export const listPublicSpaces = async (pin) => {
         if (regional2 && regional2.length > 0) return regional2;
     }
 
-    // 3. Fallback: return all approved partner spaces
+    if (city && city.trim() !== '' && city.toLowerCase() !== 'all') {
+        const { data: citySpaces, error: cityErr } = await supabase
+            .from('partner_spaces')
+            .select(PUBLIC_SPACE_COLUMNS)
+            .ilike('city', `%${city.trim()}%`)
+            .eq('status', 'approved')
+            .order('sort_order', { foreignTable: 'space_images', ascending: true })
+            .limit(100);
+
+        if (!cityErr && citySpaces && citySpaces.length > 0) return citySpaces;
+    }
+
+    // 3. Fallback / default: return all approved partner spaces
     const { data: allSpaces, error } = await supabase
         .from('partner_spaces')
         .select(PUBLIC_SPACE_COLUMNS)
         .eq('status', 'approved')
         .order('sort_order', { foreignTable: 'space_images', ascending: true })
-        .limit(10);
+        .limit(100);
 
     if (error) throw error;
     return allSpaces || [];
