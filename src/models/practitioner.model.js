@@ -84,21 +84,75 @@ export const getServicesForPractitionerSlug = async (slug) => {
 };
 
 /**
- * Resolves the practitioner row owned by a logged-in auth user, for
- * self-service endpoints (e.g. managing their own services).
+ * Resolves the practitioner slug for a user with auto-healing fallback.
+ * If practitioner_slug is missing on profiles, matches by:
+ * 1. userMetadata?.practitioner_slug
+ * 2. application_email (from userEmail or auth.users)
+ * 3. full_name
+ * Automatically backfills profiles.practitioner_slug.
  */
-export const getPractitionerByUserId = async (userId) => {
-    const { data: profile, error: profileErr } = await supabase
+export const resolvePractitionerSlug = async (userId, userEmail = null, userMetadata = null) => {
+    const { data: profile } = await supabase
         .from('profiles')
-        .select('practitioner_slug')
+        .select('practitioner_slug, full_name')
         .eq('id', userId)
         .maybeSingle();
 
-    if (profileErr || !profile?.practitioner_slug) {
-        throw Object.assign(new Error('Practitioner profile not linked.'), { statusCode: 404 });
+    if (profile?.practitioner_slug) {
+        return profile.practitioner_slug;
     }
 
-    const practitioner = await getPractitionerBySlug(profile.practitioner_slug);
+    let slug = userMetadata?.practitioner_slug;
+
+    let email = userEmail;
+    if (!email) {
+        try {
+            const { data: userData } = await supabase.auth.admin.getUserById(userId);
+            email = userData?.user?.email;
+            if (!slug && userData?.user?.user_metadata?.practitioner_slug) {
+                slug = userData.user.user_metadata.practitioner_slug;
+            }
+        } catch (_) {}
+    }
+
+    if (!slug && email) {
+        const { data: prac } = await supabase
+            .from('practitioners')
+            .select('slug')
+            .ilike('application_email', email.trim().toLowerCase())
+            .maybeSingle();
+        if (prac?.slug) slug = prac.slug;
+    }
+
+    if (!slug && profile?.full_name) {
+        const { data: prac } = await supabase
+            .from('practitioners')
+            .select('slug')
+            .ilike('name', profile.full_name.trim())
+            .maybeSingle();
+        if (prac?.slug) slug = prac.slug;
+    }
+
+    if (slug) {
+        try {
+            await supabase
+                .from('profiles')
+                .update({ practitioner_slug: slug })
+                .eq('id', userId);
+        } catch (_) {}
+        return slug;
+    }
+
+    throw Object.assign(new Error('Practitioner profile not linked. Set practitioner_slug on your user profile.'), { statusCode: 404 });
+};
+
+/**
+ * Resolves the practitioner row owned by a logged-in auth user, for
+ * self-service endpoints (e.g. managing their own services).
+ */
+export const getPractitionerByUserId = async (userId, userEmail = null, userMetadata = null) => {
+    const slug = await resolvePractitionerSlug(userId, userEmail, userMetadata);
+    const practitioner = await getPractitionerBySlug(slug);
     if (!practitioner) throw Object.assign(new Error('Practitioner not found.'), { statusCode: 404 });
     return practitioner;
 };

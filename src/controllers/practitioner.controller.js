@@ -12,6 +12,7 @@ import {
     getPractitionerById,
     applyPractitioner,
     approvePractitioner,
+    resolvePractitionerSlug,
 } from '../models/practitioner.model.js';
 import { notifyAdmins, emailAdmins } from '../models/notification.model.js';
 import { uploadImage } from '../middleware/upload.middleware.js';
@@ -220,24 +221,11 @@ export const adminApprovePractitioner = async (req, res) => {
 // ─── Practitioner Self-Service ────────────────────────────────────────────────
 
 /**
- * Helper: get practitioner_slug for the logged-in practitioner from their profile
- */
-const getPractitionerSlug = async (userId) => {
-    const { data, error } = await supabase
-        .from('profiles')
-        .select('practitioner_slug')
-        .eq('id', userId)
-        .single();
-    if (error || !data?.practitioner_slug) throw Object.assign(new Error('Practitioner profile not linked. Set practitioner_slug on your user profile.'), { statusCode: 404 });
-    return data.practitioner_slug;
-};
-
-/**
  * PRAC-006: GET /api/practitioners/me
  */
 export const getMyPractitionerProfile = async (req, res) => {
     try {
-        const slug = await getPractitionerSlug(req.user.id);
+        const slug = await resolvePractitionerSlug(req.user.id, req.user.email, req.user.user_metadata);
         const data = await getOwnPractitionerProfile(slug);
         res.status(200).json({ practitioner: data });
     } catch (error) {
@@ -252,7 +240,7 @@ export const getMyPractitionerProfile = async (req, res) => {
  */
 export const updateMyPractitionerProfile = async (req, res) => {
     try {
-        const slug = await getPractitionerSlug(req.user.id);
+        const slug = await resolvePractitionerSlug(req.user.id, req.user.email, req.user.user_metadata);
 
         // Handle multipart fields manually since formData turns everything into strings
         const updatePayload = { ...req.body };

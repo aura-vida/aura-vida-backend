@@ -9,20 +9,14 @@ import {
 } from '../models/availability.model.js';
 import { supabase } from '../config/supabase.js';
 
-// Helper: get practitioner slug for the logged-in practitioner
-const getPractitionerSlug = async (userId) => {
-    const { data, error } = await supabase
-        .from('profiles')
-        .select('practitioner_slug')
-        .eq('id', userId)
-        .single();
-    if (error || !data?.practitioner_slug) {
-        throw Object.assign(
-            new Error('No practitioner profile linked. Ask an Admin to set your practitioner_slug.'),
-            { statusCode: 404 }
-        );
+import { resolvePractitionerSlug } from '../models/practitioner.model.js';
+
+// Helper: get practitioner slug for the logged-in practitioner with auto-heal
+const getPractitionerSlug = async (userOrUserId) => {
+    if (userOrUserId && typeof userOrUserId === 'object') {
+        return resolvePractitionerSlug(userOrUserId.id, userOrUserId.email, userOrUserId.user_metadata);
     }
-    return data.practitioner_slug;
+    return resolvePractitionerSlug(userOrUserId);
 };
 
 // ─── AV-001 ───────────────────────────────────────────────────────────────────
