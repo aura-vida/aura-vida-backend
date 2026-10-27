@@ -461,6 +461,18 @@ export const applyPractitioner = async (fields) => {
         throw err;
     }
 
+    if (!craft || !craft.trim()) {
+        const err = new Error('Modality / Title is required.');
+        err.statusCode = 400;
+        throw err;
+    }
+
+    if (!city || !city.trim()) {
+        const err = new Error('Location / City is required.');
+        err.statusCode = 400;
+        throw err;
+    }
+
     if (!mobile_number || !isValidPhoneNumber(mobile_number)) {
         const err = new Error('A valid mobile number is required.');
         err.statusCode = 400;
@@ -482,8 +494,8 @@ export const applyPractitioner = async (fields) => {
             name: name.trim(),
             slug,
             bio: bio?.trim() || null,
-            craft: craft?.trim() || null,
-            city: city?.trim() || null,
+            craft: craft?.trim() || 'Holistic Practitioner',
+            city: city?.trim() || '',
             // rating and sessions are never accepted from a client/applicant —
             // both start at their DB defaults (0) and are only ever set by
             // the review trigger.
