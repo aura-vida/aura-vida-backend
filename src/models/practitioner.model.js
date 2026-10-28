@@ -80,7 +80,21 @@ export const getServicesForPractitionerSlug = async (slug) => {
         .order('created_at', { ascending: false });
 
     if (error) throw error;
-    return data || [];
+    if (data && data.length > 0) return data;
+
+    // Fallback: If practitioner has not created any specific services yet,
+    // return a default 1:1 session so the booking page and checkout work seamlessly.
+    return [{
+        id: `default-${practitioner.id}`,
+        practitioner_id: practitioner.id,
+        name: `${practitioner.craft || '1:1 Holistic'} Session`,
+        description: `Private 1-on-1 session with ${practitioner.name}`,
+        duration_min: 60,
+        price_inr: practitioner.price_inr || 1500,
+        category: practitioner.craft || 'Holistic Healing',
+        is_active: true,
+        sort_order: 1
+    }];
 };
 
 /**

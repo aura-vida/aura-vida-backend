@@ -54,6 +54,28 @@ export const adminListServices = async (filters = {}) => {
 
 // ─── SERVICE-002: Get a single service by ID (public) ─────────────────────────
 export const getServiceById = async (id) => {
+    if (typeof id === 'string' && id.startsWith('default-')) {
+        const practitionerId = id.replace('default-', '');
+        const { data: practitioner } = await supabase
+            .from('practitioners')
+            .select('*')
+            .eq('id', practitionerId)
+            .maybeSingle();
+
+        if (practitioner) {
+            return {
+                id,
+                practitioner_id: practitioner.id,
+                name: `${practitioner.craft || '1:1 Holistic'} Session`,
+                description: `Private 1-on-1 session with ${practitioner.name}`,
+                duration_min: 60,
+                price_inr: practitioner.price_inr || 1500,
+                category: practitioner.craft || 'Holistic Healing',
+                is_active: true,
+            };
+        }
+    }
+
     const { data, error } = await supabase
         .from('services')
         .select('*')
