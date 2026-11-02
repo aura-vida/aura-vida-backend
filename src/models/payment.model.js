@@ -29,9 +29,9 @@ export const createRazorpayOrder = async ({
     serviceId, amountPaise, subtotalInr, taxInr, originalSubtotalInr, couponCode, discountPercent, discountInr,
     serviceName, groupSize = 1, customer, referralCredit = 0, bookingPayload,
 }) => {
-    // Apply referral credit on top (never go below ₹100 i.e. 10000 paise)
+    // Apply referral credit on top (never go below ₹1 i.e. 100 paise, which is Razorpay's minimum)
     const creditPaise = referralCredit * 100;
-    const finalAmount = Math.max(amountPaise - creditPaise, 10000);
+    const finalAmount = Math.max(amountPaise - creditPaise, 100);
 
     const itemLabel = groupSize > 1 ? `${serviceName} (group of ${groupSize})` : serviceName;
 
