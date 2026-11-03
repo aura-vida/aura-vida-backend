@@ -449,6 +449,111 @@ export const markOrderPaidAndConfirmBooking = async (orderId, paymentId) => {
 
                 await Promise.allSettled(emailPromises);
                 console.log(`✅ [EMAIL] Sent confirmation emails to ${allRecipients.length} attendee(s).`);
+
+                // 7. SEND CONFIRMATION EMAIL TO THE PRACTITIONER (for all 4 session modes)
+                try {
+                    let pracEmail = null;
+                    let pracName = 'Healer';
+
+                    if (booking?.practitioner_slug) {
+                        const { data: pracRow } = await supabase
+                            .from('practitioners')
+                            .select('name, email')
+                            .eq('slug', booking.practitioner_slug)
+                            .maybeSingle();
+
+                        if (pracRow?.email) {
+                            pracEmail = pracRow.email;
+                            pracName = pracRow.name || pracName;
+                        } else {
+                            const { data: profileRow } = await supabase
+                                .from('profiles')
+                                .select('email, full_name')
+                                .eq('practitioner_slug', booking.practitioner_slug)
+                                .maybeSingle();
+                            if (profileRow?.email) {
+                                pracEmail = profileRow.email;
+                                pracName = profileRow.full_name || pracName;
+                            }
+                        }
+                    }
+
+                    if (pracEmail) {
+                        let modeSpecificContent = '';
+                        let pracSubject = `New Booking: ${order.item_name || 'Session'} with ${primaryName} ✨`;
+
+                        if (isOnline) {
+                            pracSubject = `New Online Session: ${order.item_name || 'Session'} with ${primaryName} 🎥`;
+                            modeSpecificContent = `
+                              <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:20px;margin:20px 0;text-align:center;">
+                                <p style="margin:0 0 10px 0;font-size:15px;color:#166534;font-weight:600;">Online Video Session (Google Meet)</p>
+                                ${meetLink ? `
+                                  <a href="${meetLink}" style="display:inline-block;background:#1a5c38;color:#fff;padding:14px 32px;border-radius:9999px;font-weight:600;font-size:15px;text-decoration:none;">🎥 Join Google Meet Session</a>
+                                  <p style="margin-top:10px;font-size:12px;color:#666;">${meetLink}</p>
+                                ` : `<p style="font-size:13px;color:#666;">Google Meet link is accessible from your Practitioner Dashboard.</p>`}
+                              </div>
+                            `;
+                        } else if (booking?.mode === 'studio') {
+                            pracSubject = `New Studio Session: ${order.item_name || 'Session'} with ${primaryName} 🏡`;
+                            modeSpecificContent = `
+                              <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin:20px 0;">
+                                <p style="margin:0 0 4px 0;font-size:14px;color:#1e293b;font-weight:600;">Location: Your Studio / Sanctuary</p>
+                                <p style="margin:0;font-size:13px;color:#64748b;">Client will arrive at your sanctuary for their session.</p>
+                              </div>
+                            `;
+                        } else if (booking?.mode === 'centre') {
+                            const spaceAddress = updatedLocation?.address || (typeof booking?.meeting_location === 'object' ? booking.meeting_location?.address : '') || 'Partner Space';
+                            pracSubject = `New Partner Space Session: ${order.item_name || 'Session'} with ${primaryName} 🏛️`;
+                            modeSpecificContent = `
+                              <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin:20px 0;">
+                                <p style="margin:0 0 4px 0;font-size:14px;color:#1e293b;font-weight:600;">Location: Partner Sanctuary</p>
+                                <p style="margin:0;font-size:13px;color:#334155;"><strong>Address:</strong> ${spaceAddress}</p>
+                                ${booking?.pin ? `<p style="margin:6px 0 0 0;font-size:13px;color:#64748b;">Space PIN: <strong>${booking.pin}</strong></p>` : ''}
+                              </div>
+                            `;
+                        } else if (booking?.mode === 'host') {
+                            const clientAddress = updatedLocation?.address || (typeof booking?.meeting_location === 'object' ? booking.meeting_location?.address : '') || 'Client home address';
+                            pracSubject = `New Home Visit Session: ${order.item_name || 'Session'} with ${primaryName} 📍`;
+                            modeSpecificContent = `
+                              <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin:20px 0;">
+                                <p style="margin:0 0 4px 0;font-size:14px;color:#1e293b;font-weight:600;">Location: Client's Home</p>
+                                <p style="margin:0;font-size:13px;color:#334155;"><strong>Address:</strong> ${clientAddress}</p>
+                              </div>
+                            `;
+                        }
+
+                        await sendEmail({
+                            to: pracEmail,
+                            subject: pracSubject,
+                            html: `
+                              <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:32px;border-radius:16px;border:1px solid #e5e7eb;">
+                                <h1 style="font-size:24px;color:#1a5c38;margin-bottom:4px;">New Session Confirmed! 🎉</h1>
+                                <p style="color:#555;margin-top:0;">Hi ${pracName} 👋, you have a new confirmed session booking.</p>
+                                <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0;">
+                                <table style="width:100%;font-size:14px;color:#333;">
+                                  <tr><td style="padding:8px 0;color:#888;">Service</td><td style="padding:8px 0;font-weight:600;">${order.item_name || 'Kusala Session'}</td></tr>
+                                  <tr><td style="padding:8px 0;color:#888;">Date &amp; Time</td><td style="padding:8px 0;font-weight:600;">${scheduledDate} IST</td></tr>
+                                  <tr><td style="padding:8px 0;color:#888;">Mode</td><td style="padding:8px 0;font-weight:600;text-transform:capitalize;">${booking?.mode || 'session'}</td></tr>
+                                  <tr><td style="padding:8px 0;color:#888;">Client Name</td><td style="padding:8px 0;font-weight:600;">${primaryName}</td></tr>
+                                  ${primaryEmail ? `<tr><td style="padding:8px 0;color:#888;">Client Email</td><td style="padding:8px 0;font-weight:600;">${primaryEmail}</td></tr>` : ''}
+                                  ${booking?.group_size > 1 ? `<tr><td style="padding:8px 0;color:#888;">Group size</td><td style="padding:8px 0;font-weight:600;">${booking.group_size} people</td></tr>` : ''}
+                                </table>
+                                ${modeSpecificContent}
+                                <div style="margin-top: 24px; text-align: center;">
+                                  <a href="https://www.kusala.in/practitioner" style="display:inline-block;background:#1e293b;color:#fff;padding:12px 24px;border-radius:8px;font-weight:600;font-size:13px;text-decoration:none;">Open Practitioner Portal</a>
+                                </div>
+                                <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0;">
+                                <p style="font-size:12px;color:#aaa;">Kusala Healer Network &bull; Questions? Reply to this email or visit kusala.in</p>
+                              </div>
+                            `,
+                        });
+                        console.log(`✅ [EMAIL] Sent booking notification email to practitioner ${pracName} (${pracEmail}).`);
+                    } else {
+                        console.warn(`⚠️ [EMAIL] No email found for practitioner slug: ${booking?.practitioner_slug}`);
+                    }
+                } catch (pracEmailErr) {
+                    console.error('❌ [PAYMENT MODEL] Failed to send practitioner email:', pracEmailErr.message);
+                }
             } catch (emailErr) {
                 console.error('❌ [PAYMENT MODEL] Failed to send attendee emails:', emailErr.message);
             }
