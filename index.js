@@ -29,30 +29,9 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-const allowedOrigins = [
-    'http://localhost:3000',
-    'http://localhost:5000',   // Swagger UI
-    'http://localhost:8080',
-    'http://localhost:5173',
-    'http://3.107.114.205:5000',
-    'https://kusalabackend.duckdns.org',
-    'https://pizza-circumstances-knives-governments.trycloudflare.com',
-    'https://www.kusala.in',
-    process.env.FRONTEND_URL,
-].filter(Boolean);
-
+// Allow all origins dynamically (kusala.in, www.kusala.in, previews, localhost, mobile, etc.)
 app.use(cors({
-    origin: (origin, callback) => {
-        // Allow requests with no origin (like mobile apps, curl, server-to-server)
-        if (!origin) return callback(null, true);
-        if (
-            allowedOrigins.includes(origin) ||
-            /\.vercel\.app$/.test(origin)
-        ) {
-            return callback(null, true);
-        }
-        return callback(null, false);
-    },
+    origin: true,
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization', 'ngrok-skip-browser-warning', 'X-Tunnel-Skip-AntiPhishing-Page'],
 }));
