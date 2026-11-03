@@ -297,7 +297,7 @@ export const markOrderPaidAndConfirmBooking = async (orderId, paymentId) => {
                     practitioner_slug: booking.practitioner_slug,
                     practitioner_name: booking.practitioner_name,
                     item_id: booking.item_id,
-                    amount: booking.amount,
+                    amount: order.amount ?? booking.amount,
                     currency: booking.currency || 'INR',
                     mode: booking.mode,
                     pin: booking.pin || null,
@@ -368,7 +368,7 @@ export const markOrderPaidAndConfirmBooking = async (orderId, paymentId) => {
             try {
                 const { sendEmail } = await import('../services/email.service.js');
                 const isOnline = booking?.mode === 'online';
-                const meetLink = updatedLocation?.meet_link;
+                const meetLink = updatedLocation?.meet_link || (typeof booking?.meeting_location === 'object' ? booking?.meeting_location?.meet_link : null);
 
                 // Build the list of recipients from the attendees stored on the booking.
                 // Normalize: attendees can be { name, email } objects (new) or plain strings (old).
@@ -458,23 +458,45 @@ export const markOrderPaidAndConfirmBooking = async (orderId, paymentId) => {
                     if (booking?.practitioner_slug) {
                         const { data: pracRow } = await supabase
                             .from('practitioners')
-                            .select('name, email')
+                            .select('*')
                             .eq('slug', booking.practitioner_slug)
                             .maybeSingle();
 
-                        if (pracRow?.email) {
-                            pracEmail = pracRow.email;
-                            pracName = pracRow.name || pracName;
-                        } else {
+                        pracEmail = pracRow?.application_email || pracRow?.email || null;
+                        pracName = pracRow?.name || pracName;
+
+                        if (!pracEmail) {
                             const { data: profileRow } = await supabase
                                 .from('profiles')
-                                .select('email, full_name')
+                                .select('*')
                                 .eq('practitioner_slug', booking.practitioner_slug)
                                 .maybeSingle();
-                            if (profileRow?.email) {
-                                pracEmail = profileRow.email;
-                                pracName = profileRow.full_name || pracName;
+
+                            if (profileRow?.id) {
+                                try {
+                                    const { data: authUserData } = await supabase.auth.admin.getUserById(profileRow.id);
+                                    if (authUserData?.user?.email) {
+                                        pracEmail = authUserData.user.email;
+                                    }
+                                } catch (_) {}
                             }
+
+                            if (!pracEmail) {
+                                pracEmail = profileRow?.email || profileRow?.contact_email || null;
+                            }
+                            pracName = profileRow?.full_name || pracName;
+                        }
+
+                        if (!pracEmail) {
+                            try {
+                                const { data: authUsers } = await supabase.auth.admin.listUsers();
+                                const matchedUser = authUsers?.users?.find(u => 
+                                    u.user_metadata?.practitioner_slug === booking.practitioner_slug
+                                );
+                                if (matchedUser?.email) {
+                                    pracEmail = matchedUser.email;
+                                }
+                            } catch (_) {}
                         }
                     }
 
