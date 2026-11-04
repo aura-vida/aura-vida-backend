@@ -1,9 +1,23 @@
 import { supabaseAuth } from '../config/supabase.js';
 import { createUserProfile, getUserProfile } from '../models/user.model.js';
+import { isValidPhoneNumber } from '../utils/validation.js';
 
 export const register = async (req, res) => {
     try {
-        const { email, password, name, role = 'Customer', referral_code } = req.body;
+        const { email, password, name, role = 'Customer', referral_code, whatsapp_number, phone } = req.body;
+
+        // Validation for mandatory WhatsApp number for Customers
+        const isCustomer = !role || role.toLowerCase() === 'customer' || role.toLowerCase() === 'client';
+        if (isCustomer) {
+            if (!whatsapp_number || !String(whatsapp_number).trim()) {
+                return res.status(400).json({ error: 'WhatsApp number is mandatory for customer registration.' });
+            }
+            if (!isValidPhoneNumber(whatsapp_number)) {
+                return res.status(400).json({ error: 'Please enter a valid WhatsApp number, including the country code.' });
+            }
+        } else if (whatsapp_number && !isValidPhoneNumber(whatsapp_number)) {
+            return res.status(400).json({ error: 'Please enter a valid WhatsApp number, including the country code.' });
+        }
 
         // 1. Create user in Supabase Auth (using anon-key client to avoid session contamination)
         // referral_code is passed via raw_user_meta_data so the handle_new_user()
@@ -32,7 +46,7 @@ export const register = async (req, res) => {
         if (userId) {
             try {
                 // 2. Create profile + assign role using the SERVICE ROLE client (bypasses RLS)
-                userProfile = await createUserProfile(userId, name, email, role);
+                userProfile = await createUserProfile(userId, name, email, role, whatsapp_number, phone || whatsapp_number);
             } catch (profileError) {
                 console.error('Profile creation failed:', profileError);
             }

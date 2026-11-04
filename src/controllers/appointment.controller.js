@@ -68,8 +68,14 @@ export const listPractitionerAppointments = async (req, res) => {
         const { data: appts, error, count } = await query;
         if (error) throw error;
 
+        // Strict RBAC: Ensure practitioner can never retrieve customer WhatsApp or contact numbers
+        const sanitizedAppts = (appts || []).map((b) => {
+            const { whatsapp_number, client_whatsapp_number, ...rest } = b;
+            return rest;
+        });
+
         res.status(200).json({
-            appointments: appts,
+            appointments: sanitizedAppts,
             pagination: { page: parseInt(page), limit: parseInt(limit), total: count, totalPages: Math.ceil(count / limit) }
         });
     } catch (err) {
@@ -161,7 +167,14 @@ export const getAppointmentById = async (req, res, next) => {
             return res.status(403).json({ error: 'Forbidden.' });
         }
 
-        res.status(200).json({ appointment: data });
+        // RBAC: Practitioners must never receive customer WhatsApp number
+        const appointmentData = { ...data };
+        if (req.user.role === 'practitioner') {
+            delete appointmentData.whatsapp_number;
+            delete appointmentData.client_whatsapp_number;
+        }
+
+        res.status(200).json({ appointment: appointmentData });
     } catch (err) {
         console.error('getAppointmentById error:', err);
         res.status(500).json({ error: 'Failed to fetch appointment' });

@@ -1,16 +1,25 @@
 import { supabase } from '../config/supabase.js';
+import { isValidPhoneNumber } from '../utils/validation.js';
 
 /**
  * Create a user profile and assign their role on registration
  */
-export const createUserProfile = async (userId, name, email, incomingRole) => {
+export const createUserProfile = async (userId, name, email, incomingRole, whatsappNumber = null, phone = null) => {
     let dbRole = 'client';
     if (incomingRole === 'Practitioner') dbRole = 'practitioner';
     else if (incomingRole === 'Admin') dbRole = 'admin';
 
+    const profilePayload = {
+        id: userId,
+        full_name: name,
+        credit_inr: 0,
+        ...(whatsappNumber ? { whatsapp_number: String(whatsappNumber).trim() } : {}),
+        ...(phone ? { phone: String(phone).trim() } : {}),
+    };
+
     const { data: profileData, error: profileError } = await supabase
         .from('profiles')
-        .upsert([{ id: userId, full_name: name, credit_inr: 0 }])
+        .upsert([profilePayload])
         .select();
 
     if (profileError) {
@@ -86,13 +95,28 @@ export const getUserProfile = async (userId) => {
  * Only fields present in the 'profiles' table are allowed.
  */
 export const updateUserProfile = async (userId, fields) => {
-    const allowedFields = ['full_name', 'phone'];
+    const allowedFields = ['full_name', 'phone', 'whatsapp_number'];
     const sanitized = {};
 
     for (const key of allowedFields) {
         if (fields[key] !== undefined) {
             sanitized[key] = fields[key];
         }
+    }
+
+    if (fields.whatsapp_number !== undefined) {
+        const trimmedWa = typeof fields.whatsapp_number === 'string' ? fields.whatsapp_number.trim() : '';
+        if (!trimmedWa) {
+            const err = new Error('WhatsApp number cannot be empty. A valid WhatsApp number including country code is required.');
+            err.statusCode = 400;
+            throw err;
+        }
+        if (!isValidPhoneNumber(trimmedWa)) {
+            const err = new Error('Please enter a valid WhatsApp number, including the country code.');
+            err.statusCode = 400;
+            throw err;
+        }
+        sanitized.whatsapp_number = trimmedWa;
     }
 
     // 'referred_by' is stored as a UUID, but users pass the short referral_code string.

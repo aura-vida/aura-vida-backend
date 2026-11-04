@@ -63,11 +63,13 @@ const options = {
                 // ── Auth Request Bodies ──────────────────────────────────────────
                 RegisterRequest: {
                     type: 'object',
-                    required: ['email', 'password', 'name'],
+                    required: ['email', 'password', 'name', 'whatsapp_number'],
                     properties: {
                         email: { type: 'string', format: 'email', example: 'john@example.com' },
                         password: { type: 'string', minLength: 6, example: 'SecurePassword123!' },
                         name: { type: 'string', example: 'John Doe' },
+                        whatsapp_number: { type: 'string', example: '+91 98765 43210', description: 'Mandatory for Customer with country code' },
+                        phone: { type: 'string', example: '+91 98765 43210' },
                         role: { type: 'string', enum: ['Customer', 'Practitioner', 'Admin'], default: 'Customer' },
                     },
                 },
@@ -102,6 +104,7 @@ const options = {
                         id: { type: 'string', format: 'uuid' },
                         full_name: { type: 'string', nullable: true },
                         phone: { type: 'string', nullable: true },
+                        whatsapp_number: { type: 'string', nullable: true },
                         practitioner_slug: { type: 'string', nullable: true },
                         referral_code: { type: 'string', nullable: true },
                         credit_inr: { type: 'number' },
