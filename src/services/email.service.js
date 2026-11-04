@@ -1,4 +1,6 @@
 import nodemailer from 'nodemailer';
+import dotenv from 'dotenv';
+dotenv.config();
 
 /**
  * Global transporter instance.
@@ -57,8 +59,9 @@ const initTransporter = async () => {
 export const sendEmail = async ({ to, subject, html }) => {
     try {
         const mailTransporter = await initTransporter();
+        const senderFrom = process.env.SMTP_FROM || (process.env.SMTP_USER ? `"Kusala" <${process.env.SMTP_USER}>` : '"Kusala" <hello@auravida.com>');
         const info = await mailTransporter.sendMail({
-            from: '"Kusala" <hello@auravida.com>', // sender address
+            from: senderFrom, // sender address
             to: Array.isArray(to) ? to.join(', ') : to, // list of receivers
             subject,
             html,
