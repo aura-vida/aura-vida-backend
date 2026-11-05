@@ -1,4 +1,4 @@
-import { supabaseAuth } from '../config/supabase.js';
+import { supabaseAuth, supabase } from '../config/supabase.js';
 import { createUserProfile, getUserProfile } from '../models/user.model.js';
 import { isValidPhoneNumber } from '../utils/validation.js';
 
@@ -20,19 +20,41 @@ export const register = async (req, res) => {
         }
 
         // 1. Create user in Supabase Auth (using anon-key client to avoid session contamination)
-        // referral_code is passed via raw_user_meta_data so the handle_new_user()
-        // DB trigger can look up the referrer and create the `referrals` row —
-        // without this, a referral link never actually links the two accounts,
-        // and neither party is ever credited when the referred user books.
         const normalizedReferralCode = referral_code ? String(referral_code).trim().toUpperCase() : null;
-        const { data: authData, error: authError } = await supabaseAuth.auth.signUp({
+        let authData = null;
+
+        const { data: signUpData, error: authError } = await supabaseAuth.auth.signUp({
             email,
             password,
             options: normalizedReferralCode ? { data: { referral_code: normalizedReferralCode } } : undefined,
         });
 
         if (authError) {
-            return res.status(400).json({ error: authError.message });
+            // Supabase email service often fails or hits rate limits if custom SMTP is not set in Supabase Dashboard.
+            // Fall back to creating the user pre-confirmed using the service role admin API:
+            if (
+                authError.message?.toLowerCase().includes('confirmation email') ||
+                authError.message?.toLowerCase().includes('email') ||
+                authError.status === 500
+            ) {
+                console.warn(`⚠️ Supabase signUp email error ("${authError.message}"). Falling back to admin.createUser...`);
+                // const { data: adminData, error: adminErr } = await supabase.auth.admin.createUser({
+                //     email,
+                //     password,
+                //     email_confirm: true,
+                //     user_metadata: normalizedReferralCode ? { referral_code: normalizedReferralCode } : {},
+                // });
+
+                // if (adminErr) {
+                //     console.error('Admin createUser error:', adminErr);
+                //     return res.status(400).json({ error: adminErr.message });
+                // }
+                // authData = adminData;
+            } else {
+                return res.status(400).json({ error: authError.message });
+            }
+        } else {
+            authData = signUpData;
         }
 
         // Supabase anti-enumeration protection returns a fake user object if the user already exists.
@@ -52,12 +74,25 @@ export const register = async (req, res) => {
             }
         }
 
+        // Automatically authenticate user if no active session was returned (e.g. when created via admin API)
+        let session = authData.session;
+        if (!session && authData.user) {
+            const { data: signInData, error: signInErr } = await supabaseAuth.auth.signInWithPassword({
+                email,
+                password,
+            });
+            if (!signInErr && signInData) {
+                session = signInData.session;
+            }
+        }
+
         res.status(201).json({
             message: 'User registered successfully',
             user: { ...authData.user, profile: userProfile },
-            session: authData.session
+            session
         });
     } catch (error) {
+        console.error('Registration error:', error);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 };

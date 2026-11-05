@@ -9,18 +9,30 @@ export const createUserProfile = async (userId, name, email, incomingRole, whats
     if (incomingRole === 'Practitioner') dbRole = 'practitioner';
     else if (incomingRole === 'Admin') dbRole = 'admin';
 
+    const contactPhone = phone || whatsappNumber;
     const profilePayload = {
         id: userId,
         full_name: name,
         credit_inr: 0,
         ...(whatsappNumber ? { whatsapp_number: String(whatsappNumber).trim() } : {}),
-        ...(phone ? { phone: String(phone).trim() } : {}),
+        ...(contactPhone ? { phone: String(contactPhone).trim() } : {}),
     };
 
-    const { data: profileData, error: profileError } = await supabase
+    let { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .upsert([profilePayload])
         .select();
+
+    // Fallback if DB does not yet have whatsapp_number column
+    if (profileError && (profileError.code === '42703' || profileError.message?.includes('whatsapp_number'))) {
+        delete profilePayload.whatsapp_number;
+        const res = await supabase
+            .from('profiles')
+            .upsert([profilePayload])
+            .select();
+        profileData = res.data;
+        profileError = res.error;
+    }
 
     if (profileError) {
         console.error("profile upsert error:", profileError);
@@ -87,7 +99,12 @@ export const getUserProfile = async (userId) => {
         .select('*', { count: 'exact', head: true })
         .eq('referrer_id', userId);
 
-    return { ...(profile || {}), role: roleData?.role, referral_count: referralCount || 0 };
+    const mergedProfile = { ...(profile || {}), role: roleData?.role, referral_count: referralCount || 0 };
+    if (mergedProfile && !mergedProfile.whatsapp_number && mergedProfile.phone) {
+        mergedProfile.whatsapp_number = mergedProfile.phone;
+    }
+
+    return mergedProfile;
 };
 
 /**
@@ -144,12 +161,37 @@ export const updateUserProfile = async (userId, fields) => {
         sanitized.referred_by = referrer.id;
     }
 
-    const { data, error } = await supabase
+    if (sanitized.whatsapp_number && !sanitized.phone) {
+        sanitized.phone = sanitized.whatsapp_number;
+    }
+
+    let { data, error } = await supabase
         .from('profiles')
         .update({ ...sanitized, updated_at: new Date().toISOString() })
         .eq('id', userId)
         .select()
         .single();
+
+    // Graceful fallback if database column whatsapp_number has not been migrated yet (Postgres code 42703)
+    if (error && (error.code === '42703' || error.message?.includes('whatsapp_number'))) {
+        console.warn('⚠️ profiles.whatsapp_number column not found in database. Storing in phone column as fallback.');
+        const fallback = { ...sanitized };
+        if (fallback.whatsapp_number && !fallback.phone) {
+            fallback.phone = fallback.whatsapp_number;
+        }
+        delete fallback.whatsapp_number;
+        const res = await supabase
+            .from('profiles')
+            .update({ ...fallback, updated_at: new Date().toISOString() })
+            .eq('id', userId)
+            .select()
+            .single();
+        data = res.data;
+        error = res.error;
+        if (data && sanitized.whatsapp_number) {
+            data.whatsapp_number = sanitized.whatsapp_number;
+        }
+    }
 
     if (error) throw error;
     return data;
