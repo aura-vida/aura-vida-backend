@@ -130,8 +130,28 @@ export const listPractitionerAppointments = async (req, res) => {
         const { data: appts, error, count } = await query;
         if (error) throw error;
 
+        // Fetch client reviews for these appointments so the practitioner can see client feedback
+        const bookingIds = (appts || []).map((b) => b.id);
+        const reviewMap = {};
+        if (bookingIds.length > 0) {
+            const { data: reviews } = await supabase
+                .from('reviews')
+                .select('id, booking_id, rating, comment, created_at, status')
+                .in('booking_id', bookingIds);
+            if (reviews) {
+                reviews.forEach((r) => {
+                    reviewMap[r.booking_id] = r;
+                });
+            }
+        }
+
+        const enrichedAppts = (appts || []).map((b) => ({
+            ...b,
+            review: reviewMap[b.id] || null,
+        }));
+
         res.status(200).json({
-            appointments: appts,
+            appointments: enrichedAppts,
             pagination: { page: parseInt(page), limit: parseInt(limit), total: count, totalPages: Math.ceil(count / limit) }
         });
     } catch (err) {

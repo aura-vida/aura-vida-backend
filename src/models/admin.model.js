@@ -120,7 +120,28 @@ export const getAppointmentsList = async (filters, page, limit) => {
 
     const { data, count, error } = await query.range(from, to).order('scheduled_at', { ascending: false });
     if (error) throw error;
-    return { data, pagination: { page, limit, total: count, totalPages: Math.ceil(count / limit) } };
+
+    // Fetch review details for bookings
+    const bookingIds = (data || []).map((b) => b.id);
+    const reviewMap = {};
+    if (bookingIds.length > 0) {
+        const { data: reviews } = await supabase
+            .from('reviews')
+            .select('id, booking_id, rating, comment, created_at, status')
+            .in('booking_id', bookingIds);
+        if (reviews) {
+            reviews.forEach((r) => {
+                reviewMap[r.booking_id] = r;
+            });
+        }
+    }
+
+    const enriched = (data || []).map((b) => ({
+        ...b,
+        review: reviewMap[b.id] || null,
+    }));
+
+    return { data: enriched, pagination: { page, limit, total: count, totalPages: Math.ceil(count / limit) } };
 };
 
 export const getPaymentsList = async (filters, page, limit) => {
