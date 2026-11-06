@@ -422,6 +422,7 @@ export const rescheduleAppointment = async (req, res) => {
 
         // `date`/`time` are always IST wall-clock (this platform is India-only) —
         // convert to the correct UTC instant rather than treating them as UTC.
+        const previousScheduledAt = booking.scheduled_at;
         const scheduled_at = istToUtcIso(date, time);
 
         // Only the date/time changes — payment status is unaffected by a
@@ -435,7 +436,7 @@ export const rescheduleAppointment = async (req, res) => {
 
         if (error) throw error;
 
-        // Trigger rescheduling notifications (non-blocking)
+        // Trigger rescheduling notifications & emails (non-blocking)
         try {
             const formattedDate = new Date(scheduled_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
             await createNotification(
@@ -459,7 +460,17 @@ export const rescheduleAppointment = async (req, res) => {
                     booking.id
                 );
             }
-        } catch (_) { }
+
+            // Send Reschedule Confirmation Emails to User & Practitioner
+            const { sendAppointmentRescheduledEmails } = await import('../services/email.service.js');
+            await sendAppointmentRescheduledEmails({
+                booking: data,
+                previousScheduledAt,
+                newScheduledAt: scheduled_at,
+            });
+        } catch (notifErr) {
+            console.error('❌ [RESCHEDULE] Notification or email error:', notifErr.message);
+        }
 
         res.status(200).json({ message: 'Appointment rescheduled.', appointment: data });
     } catch (err) {
