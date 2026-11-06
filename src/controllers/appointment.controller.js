@@ -10,9 +10,69 @@ import { istToUtcIso } from '../utils/timezone.js';
 const CUSTOMER_CANCEL_WINDOW_HOURS = 4;
 const CUSTOMER_CANCEL_WINDOW_MS = CUSTOMER_CANCEL_WINDOW_HOURS * 60 * 60 * 1000;
 
+// ─── Synchronize Practitioner Completed Session Count (Idempotent) ───────────
+export const syncPractitionerSessions = async (practitionerSlug) => {
+    if (!practitionerSlug) return;
+    try {
+        const { count, error } = await supabase
+            .from('bookings')
+            .select('*', { count: 'exact', head: true })
+            .eq('practitioner_slug', practitionerSlug)
+            .eq('status', 'completed');
+        if (!error && count !== null) {
+            await supabase
+                .from('practitioners')
+                .update({ sessions: count })
+                .eq('slug', practitionerSlug);
+        }
+    } catch (err) {
+        console.error(`syncPractitionerSessions error for ${practitionerSlug}:`, err);
+    }
+};
+
+// ─── Auto-complete Past Confirmed Appointments (Idempotent) ──────────────────
+export const autoCompletePastConfirmedBookings = async () => {
+    try {
+        // Any confirmed booking whose scheduled time has passed by at least 15 minutes
+        const cutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+        const { data: pastBookings, error } = await supabase
+            .from('bookings')
+            .select('id, practitioner_slug')
+            .eq('status', 'confirmed')
+            .lte('scheduled_at', cutoff);
+
+        if (error) {
+            console.error('autoCompletePastConfirmedBookings query error:', error);
+            return;
+        }
+
+        if (pastBookings && pastBookings.length > 0) {
+            const ids = pastBookings.map((b) => b.id);
+            const { error: updateErr } = await supabase
+                .from('bookings')
+                .update({ status: 'completed' })
+                .in('id', ids);
+
+            if (updateErr) {
+                console.error('autoCompletePastConfirmedBookings update error:', updateErr);
+                return;
+            }
+
+            const slugs = [...new Set(pastBookings.map((b) => b.practitioner_slug).filter(Boolean))];
+            for (const slug of slugs) {
+                await syncPractitionerSessions(slug);
+            }
+        }
+    } catch (err) {
+        console.error('autoCompletePastConfirmedBookings error:', err);
+    }
+};
+
 // ─── APT-002: List My Appointments (Customer) ────────────────────────────────
 export const listMyAppointments = async (req, res) => {
     try {
+        await autoCompletePastConfirmedBookings();
+
         const { status, page = 1, limit = 10 } = req.query;
         const from = (page - 1) * limit;
         const to = from + parseInt(limit) - 1;
@@ -42,6 +102,8 @@ export const listMyAppointments = async (req, res) => {
 // ─── APT-008: List Practitioner Appointments ─────────────────────────────────
 export const listPractitionerAppointments = async (req, res) => {
     try {
+        await autoCompletePastConfirmedBookings();
+
         const { data: prof, error: slugErr } = await supabase
             .from('profiles')
             .select('practitioner_slug')
@@ -131,10 +193,81 @@ export const updatePractitionerAppointmentStatus = async (req, res) => {
             .single();
 
         if (error) throw error;
+
+        if (status === 'completed' && booking.practitioner_slug) {
+            await syncPractitionerSessions(booking.practitioner_slug);
+        }
+
         res.status(200).json({ message: 'Appointment status updated', appointment: data });
     } catch (err) {
         console.error('updatePractitionerAppointmentStatus error:', err);
         res.status(500).json({ error: 'Failed to update appointment status' });
+    }
+};
+
+// ─── APT-010: Complete Appointment (Client, Practitioner, Admin) ─────────────
+// Explicit completion action with idempotency
+export const completeAppointment = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { data: booking, error: fetchErr } = await supabase
+            .from('bookings')
+            .select('*')
+            .eq('id', id)
+            .single();
+
+        if (fetchErr || !booking) {
+            return res.status(404).json({ error: 'Appointment not found' });
+        }
+
+        // Idempotent: if already completed, return existing status without error or duplicate count
+        if (booking.status === 'completed') {
+            if (booking.practitioner_slug) {
+                await syncPractitionerSessions(booking.practitioner_slug);
+            }
+            return res.status(200).json({ message: 'Appointment already completed', appointment: booking });
+        }
+
+        if (booking.status !== 'confirmed') {
+            return res.status(400).json({
+                error: `Cannot complete appointment with status '${booking.status}'. Only confirmed appointments can be completed.`
+            });
+        }
+
+        // Authorization check: Admin, or the client who booked it, or the assigned practitioner
+        const isAdmin = req.user.role === 'admin';
+        const isClient = booking.client_id === req.user.id;
+        let isAssignedPractitioner = false;
+        if (req.user.role === 'practitioner') {
+            const { data: prof } = await supabase
+                .from('profiles')
+                .select('practitioner_slug')
+                .eq('id', req.user.id)
+                .single();
+            isAssignedPractitioner = prof?.practitioner_slug === booking.practitioner_slug;
+        }
+
+        if (!isAdmin && !isClient && !isAssignedPractitioner) {
+            return res.status(403).json({ error: 'You are not authorized to complete this appointment.' });
+        }
+
+        const { data: updated, error: updateErr } = await supabase
+            .from('bookings')
+            .update({ status: 'completed' })
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (updateErr) throw updateErr;
+
+        if (booking.practitioner_slug) {
+            await syncPractitionerSessions(booking.practitioner_slug);
+        }
+
+        res.status(200).json({ message: 'Appointment marked as completed', appointment: updated });
+    } catch (err) {
+        console.error('completeAppointment error:', err);
+        res.status(500).json({ error: 'Failed to complete appointment' });
     }
 };
 

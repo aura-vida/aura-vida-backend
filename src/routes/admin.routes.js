@@ -296,6 +296,30 @@ router.get('/contacts', requireAuth, requireRole('admin'), adminController.listC
 
 /**
  * @swagger
+ * /api/admin/reviews:
+ *   get:
+ *     summary: List all reviews (Admin)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         schema: { type: string, enum: [all, approved, rejected, pending] }
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, default: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 15 }
+ *     responses:
+ *       200:
+ *         description: Paginated list of reviews with client and practitioner details
+ */
+router.get('/reviews', requireAuth, requireRole('admin'), adminController.listReviews);
+
+/**
+ * @swagger
  * /api/admin/reviews/{id}/status:
  *   patch:
  *     summary: Moderate a review — approve or reject (REVIEW-003)

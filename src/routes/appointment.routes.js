@@ -8,6 +8,7 @@ import {
     confirmAppointment,
     listPractitionerAppointments,
     updatePractitionerAppointmentStatus,
+    completeAppointment,
 } from '../controllers/appointment.controller.js';
 import { requireAuth, requireRole } from '../middleware/auth.middleware.js';
 
@@ -144,6 +145,30 @@ router.post('/appointments/:id/cancel', requireAuth, requireRole('admin', 'pract
  *         description: Not found
  */
 router.post('/appointments/:id/reschedule', requireAuth, rescheduleAppointment);
+
+/**
+ * @swagger
+ * /api/appointments/{id}/complete:
+ *   post:
+ *     summary: Complete appointment (APT-010)
+ *     description: Customer, Practitioner, or Admin marks a confirmed appointment as completed.
+ *     tags: [Appointments]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Appointment completed and practitioner session count updated
+ *       400:
+ *         description: Appointment not in confirmed status
+ *       404:
+ *         description: Not found
+ */
+router.post('/appointments/:id/complete', requireAuth, completeAppointment);
 
 /**
  * @swagger

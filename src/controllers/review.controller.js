@@ -16,41 +16,64 @@ export const listPractitionerReviews = async (req, res) => {
 export const createReview = async (req, res) => {
     try {
         const { practitioner_id, booking_id, rating, comment } = req.body;
-        if (!practitioner_id || !rating) {
-            return res.status(400).json({ error: 'practitioner_id and rating are required.' });
+        if (!rating) {
+            return res.status(400).json({ error: 'Star rating is mandatory (1-5 stars).' });
         }
-        if (rating < 1 || rating > 5) {
-            return res.status(400).json({ error: 'rating must be between 1 and 5.' });
+        const numericRating = parseInt(rating);
+        if (isNaN(numericRating) || numericRating < 1 || numericRating > 5) {
+            return res.status(400).json({ error: 'Rating must be an integer between 1 and 5.' });
+        }
+        if (!practitioner_id && !booking_id) {
+            return res.status(400).json({ error: 'Either practitioner_id or booking_id is required.' });
         }
         const data = await reviewModel.createReview({
-            practitioner_id,
+            practitioner_id: practitioner_id || null,
             booking_id: booking_id || null,
             client_id: req.user.id,
-            rating: parseInt(rating),
-            comment: comment || null
+            rating: numericRating,
+            comment: comment ? String(comment).trim() : null
         });
 
         // Trigger notifications asynchronously (non-blocking)
         try {
-            await createNotification(
-                practitioner_id,
-                'New Client Review',
-                `A client left a ${rating}-star review for your session.`,
-                'review',
-                data.id
-            );
+            if (data.practitioner_id) {
+                await createNotification(
+                    data.practitioner_id,
+                    'New Client Review',
+                    `A client left a ${numericRating}-star review for your session.`,
+                    'review',
+                    data.id
+                );
+            }
             await notifyAdmins(
                 'New Client Review',
-                `A new ${rating}-star review was submitted and is pending moderation.`,
+                `A new ${numericRating}-star review was submitted.`,
                 'review',
                 data.id
             );
         } catch (_) {}
 
-        res.status(201).json({ message: 'Review submitted and pending approval.', data });
+        res.status(201).json({ message: 'Review submitted successfully.', data });
     } catch (error) {
         console.error('createReview error:', error);
         res.status(error.statusCode || 500).json({ error: error.message || 'Failed to submit review' });
+    }
+};
+
+export const listAllReviews = async (req, res) => {
+    try {
+        const { status, rating, search, page = 1, limit = 15 } = req.query;
+        const result = await reviewModel.listAllReviewsAdmin({
+            status,
+            rating,
+            search,
+            page: Math.max(1, parseInt(page) || 1),
+            limit: Math.min(100, Math.max(1, parseInt(limit) || 15)),
+        });
+        res.status(200).json(result);
+    } catch (error) {
+        console.error('listAllReviews error:', error);
+        res.status(500).json({ error: error.message || 'Failed to list reviews' });
     }
 };
 

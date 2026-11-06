@@ -18,6 +18,12 @@ export const getDashboardSummary = async () => {
         .eq('status', 'confirmed');
     if (err3) throw err3;
 
+    const { count: completedCount, error: errCompleted } = await supabase
+        .from('bookings')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'completed');
+    if (errCompleted) throw errCompleted;
+
     let totalRevenueInr = 0;
     const { data: orders, error: err4 } = await supabase
         .from('orders')
@@ -50,6 +56,7 @@ export const getDashboardSummary = async () => {
         totalUsers: usersCount || 0,
         pendingBookings: pendingCount || 0,
         confirmedBookings: confirmedCount || 0,
+        completedBookings: completedCount || 0,
         totalRevenueInr,
         totalPractitioners,
         totalSpaces,
