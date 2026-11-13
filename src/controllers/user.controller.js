@@ -1,4 +1,5 @@
 import { getUserProfile, updateUserProfile, getUserAppointments, linkPractitionerSlug, deleteUserAccount } from '../models/user.model.js';
+import { autoCompletePastConfirmedBookings } from './appointment.controller.js';
 
 /**
  * USER-001: GET /api/users/me
@@ -36,6 +37,7 @@ export const updateMe = async (req, res) => {
  */
 export const getMyAppointments = async (req, res) => {
     try {
+        await autoCompletePastConfirmedBookings();
         const { data, pagination } = await getUserAppointments(req.user.id, req.query);
         res.status(200).json({ appointments: data, pagination });
     } catch (error) {

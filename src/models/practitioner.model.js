@@ -58,6 +58,29 @@ export const getPractitionerBySlug = async (slug) => {
         .single();
 
     if (error) throw error;
+    if (!data) return null;
+
+    try {
+        // Dynamically compute real completed sessions count from bookings table
+        const { count: completedCount } = await supabase
+            .from('bookings')
+            .select('*', { count: 'exact', head: true })
+            .eq('practitioner_slug', slug)
+            .eq('status', 'completed');
+
+        if (completedCount !== null) {
+            data.sessions = completedCount;
+            // Persist back to practitioners table if different
+            supabase
+                .from('practitioners')
+                .update({ sessions: completedCount })
+                .eq('slug', slug)
+                .then();
+        }
+    } catch (e) {
+        console.error('Error fetching live session count in getPractitionerBySlug:', e);
+    }
+
     return data;
 };
 
