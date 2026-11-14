@@ -22,6 +22,7 @@ import reviewRoutes from './src/routes/review.routes.js';
 import waitlistRoutes from './src/routes/waitlist.routes.js';
 import spaceRoutes from './src/routes/space.routes.js';
 import couponRoutes from './src/routes/coupon.routes.js';
+import eventRoutes from './src/routes/event.routes.js';
 import { swaggerSpec } from './src/config/swagger.js';
 
 dotenv.config();
@@ -69,6 +70,8 @@ app.use('/api/reviews', reviewRoutes);
 app.use('/api', waitlistRoutes);
 app.use('/api', spaceRoutes);
 app.use('/api', couponRoutes);
+app.use('/api/events', eventRoutes);
+app.use('/events', eventRoutes);
 
 // Image proxy to safely load and crop S3 / remote images in frontend without CORS blockage
 app.get('/api/proxy-image', async (req, res) => {
