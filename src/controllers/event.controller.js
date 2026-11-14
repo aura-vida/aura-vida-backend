@@ -156,3 +156,4 @@ export const getBooking = async (req, res) => {
         res.status(500).json({ error: 'Failed to retrieve event booking' });
     }
 };
+

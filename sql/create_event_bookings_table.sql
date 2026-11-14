@@ -43,3 +43,4 @@ WITH CHECK (public.has_role(auth.uid(), 'admin'));
 
 -- Service role full access
 GRANT ALL ON public.event_bookings TO service_role;
+

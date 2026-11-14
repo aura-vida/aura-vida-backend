@@ -506,3 +506,4 @@ export const getEventBookingById = async (id) => {
         updated_at: ord.updated_at || ord.created_at,
     };
 };
+

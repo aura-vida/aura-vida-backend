@@ -25,3 +25,4 @@ router.get('/bookings/:id', optionalAuth, getBooking);
 router.get('/:id', getEventDetail);
 
 export default router;
+
