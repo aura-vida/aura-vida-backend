@@ -116,6 +116,125 @@ const razorpayRequest = async (path, method = 'POST', body = null) => {
 };
 
 /**
+ * Checks if a user already has a CONFIRMED booking for a specific event.
+ * Matches by userId or customerEmail.
+ */
+export const hasUserBookedEvent = async ({ eventId, userId = null, email = null }) => {
+    if (!eventId || (!userId && !email)) {
+        return { isBooked: false, booking: null };
+    }
+
+    const normalizedEmail = email ? email.trim().toLowerCase() : null;
+
+    try {
+        let query = supabase
+            .from('event_bookings')
+            .select('*')
+            .eq('event_id', eventId)
+            .eq('booking_status', 'CONFIRMED');
+
+        if (userId && normalizedEmail) {
+            query = query.or(`user_id.eq.${userId},customer_email.eq.${normalizedEmail}`);
+        } else if (userId) {
+            query = query.eq('user_id', userId);
+        } else if (normalizedEmail) {
+            query = query.eq('customer_email', normalizedEmail);
+        }
+
+        const { data, error } = await query.limit(1).maybeSingle();
+        if (error) throw error;
+        if (data) {
+            return { isBooked: true, booking: data };
+        }
+    } catch (err) {
+        console.warn('[EVENT MODEL] Error in hasUserBookedEvent event_bookings check, trying fallback:', err.message);
+    }
+
+    // Fallback check against orders table
+    try {
+        let query = supabase
+            .from('orders')
+            .select('*')
+            .eq('item_id', eventId)
+            .eq('status', 'paid');
+
+        if (normalizedEmail) {
+            query = query.eq('customer_email', normalizedEmail);
+        }
+
+        const { data, error } = await query.limit(1).maybeSingle();
+        if (!error && data) {
+            return {
+                isBooked: true,
+                booking: {
+                    id: data.id,
+                    event_id: data.item_id,
+                    event_name: data.item_name,
+                    user_id: data.details?.user_id || userId,
+                    customer_name: data.customer_name,
+                    customer_email: data.customer_email,
+                    customer_phone: data.customer_phone,
+                    base_amount: data.details?.base_amount || 2500,
+                    gst_percentage: data.details?.gst_percentage || 5,
+                    gst_amount: data.details?.gst_amount || 125,
+                    total_amount: data.details?.total_amount || 2625,
+                    currency: data.currency || 'INR',
+                    razorpay_order_id: data.razorpay_order_id,
+                    razorpay_payment_id: data.razorpay_payment_id,
+                    payment_status: 'SUCCESS',
+                    booking_status: 'CONFIRMED',
+                    created_at: data.created_at,
+                    updated_at: data.updated_at || data.created_at,
+                },
+            };
+        }
+
+        // If not matched by email, also check by userId in order details
+        if (userId) {
+            const { data: allOrders } = await supabase
+                .from('orders')
+                .select('*')
+                .eq('item_id', eventId)
+                .eq('status', 'paid');
+
+            const match = (allOrders || []).find(
+                (o) => o.details?.user_id === userId || (normalizedEmail && o.customer_email?.toLowerCase() === normalizedEmail)
+            );
+
+            if (match) {
+                return {
+                    isBooked: true,
+                    booking: {
+                        id: match.id,
+                        event_id: match.item_id,
+                        event_name: match.item_name,
+                        user_id: match.details?.user_id || userId,
+                        customer_name: match.customer_name,
+                        customer_email: match.customer_email,
+                        customer_phone: match.customer_phone,
+                        base_amount: match.details?.base_amount || 2500,
+                        gst_percentage: match.details?.gst_percentage || 5,
+                        gst_amount: match.details?.gst_amount || 125,
+                        total_amount: match.details?.total_amount || 2625,
+                        currency: match.currency || 'INR',
+                        razorpay_order_id: match.razorpay_order_id,
+                        razorpay_payment_id: match.razorpay_payment_id,
+                        payment_status: 'SUCCESS',
+                        booking_status: 'CONFIRMED',
+                        created_at: match.created_at,
+                        updated_at: match.updated_at || match.created_at,
+                    },
+                };
+            }
+        }
+    } catch (err) {
+        console.warn('[EVENT MODEL] Error in fallback orders check:', err.message);
+    }
+
+    return { isBooked: false, booking: null };
+};
+
+/**
  * Creates a Razorpay order for an event booking, persists initial booking as PENDING.
  */
 export const createEventBookingOrder = async ({ eventId, customerName, customerEmail, customerPhone, userId = null }) => {
@@ -126,6 +245,19 @@ export const createEventBookingOrder = async ({ eventId, customerName, customerE
 
     if (!customerName || !customerEmail || !customerPhone) {
         throw Object.assign(new Error('customerName, customerEmail, and customerPhone are required.'), { statusCode: 400 });
+    }
+
+    // Prevent duplicate bookings: Ensure user doesn't already have a CONFIRMED booking
+    const duplicateCheck = await hasUserBookedEvent({
+        eventId: event.id,
+        userId,
+        email: customerEmail,
+    });
+    if (duplicateCheck.isBooked) {
+        throw Object.assign(
+            new Error('You have already booked a seat for this event. Duplicate bookings are not allowed.'),
+            { statusCode: 400 }
+        );
     }
 
     const pricing = calculateEventPrice(event.pricing.basePriceInr, EVENT_GST_PERCENTAGE);
@@ -230,7 +362,7 @@ export const createEventBookingOrder = async ({ eventId, customerName, customerE
 /**
  * Verifies Razorpay payment signature and marks the event booking CONFIRMED.
  */
-export const verifyEventPaymentAndConfirm = async ({ razorpay_order_id, razorpay_payment_id, razorpay_signature }) => {
+export const verifyEventPaymentAndConfirm = async ({ razorpay_order_id, razorpay_payment_id, razorpay_signature, userId = null }) => {
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
         throw Object.assign(new Error('razorpay_order_id, razorpay_payment_id, and razorpay_signature are required.'), { statusCode: 400 });
     }
@@ -267,14 +399,19 @@ export const verifyEventPaymentAndConfirm = async ({ razorpay_order_id, razorpay
                 return { alreadyConfirmed: true, booking: existing };
             }
 
+            const updateFields = {
+                razorpay_payment_id,
+                payment_status: 'SUCCESS',
+                booking_status: 'CONFIRMED',
+                updated_at: now,
+            };
+            if (!existing.user_id && userId) {
+                updateFields.user_id = userId;
+            }
+
             const { data: updated, error: updateErr } = await supabase
                 .from('event_bookings')
-                .update({
-                    razorpay_payment_id,
-                    payment_status: 'SUCCESS',
-                    booking_status: 'CONFIRMED',
-                    updated_at: now,
-                })
+                .update(updateFields)
                 .eq('razorpay_order_id', razorpay_order_id)
                 .select()
                 .single();
@@ -311,6 +448,7 @@ export const verifyEventPaymentAndConfirm = async ({ razorpay_order_id, razorpay
             id: ord?.id || razorpay_order_id,
             event_id: evt.id,
             event_name: evt.title,
+            user_id: ord?.details?.user_id || userId || null,
             customer_name: ord?.customer_name || 'Guest',
             customer_email: ord?.customer_email || '',
             customer_phone: ord?.customer_phone || '',
@@ -432,12 +570,16 @@ export const getEventBookings = async ({ userId = null, email = null, isAdmin = 
             .eq('item_type', 'event')
             .order('created_at', { ascending: false });
 
-        if (!isAdmin && email) {
-            query = query.eq('customer_email', email.trim().toLowerCase());
-        }
-
         const { data } = await query;
-        return (data || []).map((o) => ({
+        const normEmail = email ? email.trim().toLowerCase() : null;
+        const filtered = (data || []).filter((o) => {
+            if (isAdmin) return true;
+            if (normEmail && o.customer_email?.toLowerCase() === normEmail) return true;
+            if (userId && o.details?.user_id === userId) return true;
+            return false;
+        });
+
+        return filtered.map((o) => ({
             id: o.id,
             event_id: o.item_id,
             event_name: o.item_name,

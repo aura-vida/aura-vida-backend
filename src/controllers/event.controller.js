@@ -5,6 +5,7 @@ import {
     verifyEventPaymentAndConfirm,
     getEventBookings,
     getEventBookingById,
+    hasUserBookedEvent,
 } from '../models/event.model.js';
 
 /**
@@ -41,25 +42,29 @@ export const getEventDetail = async (req, res) => {
 
 /**
  * POST /events/bookings/create-order or /api/events/bookings/create-order
- * Create Razorpay order for an event booking
+ * Create Razorpay order for an event booking (Strictly Authenticated)
  */
 export const createOrder = async (req, res) => {
     try {
         const { eventId, customerName, customerEmail, customerPhone } = req.body;
+
+        if (!req.user || !req.user.id) {
+            return res.status(401).json({ error: 'Authentication required. Please sign in to book an event.' });
+        }
 
         if (!eventId) {
             return res.status(400).json({ error: 'eventId is required' });
         }
 
         // Use logged-in user profile details if customer details are missing
-        const name = customerName || req.user?.name || req.user?.full_name;
-        const email = customerEmail || req.user?.email;
-        const phone = customerPhone || req.user?.phone;
-        const userId = req.user?.id || null;
+        const name = customerName || req.user.name || req.user.full_name || 'Member';
+        const email = customerEmail || req.user.email;
+        const phone = customerPhone || req.user.phone || '';
+        const userId = req.user.id;
 
-        if (!name || !email || !phone) {
+        if (!email) {
             return res.status(400).json({
-                error: 'customerName, customerEmail, and customerPhone are required to book an event.',
+                error: 'customerEmail is required to book an event.',
             });
         }
 
@@ -80,6 +85,28 @@ export const createOrder = async (req, res) => {
 };
 
 /**
+ * GET /events/bookings/status/:eventId or /api/events/bookings/status/:eventId
+ * Check if the authenticated user has already booked a specific event
+ */
+export const getBookingStatus = async (req, res) => {
+    try {
+        const { eventId } = req.params;
+        const userId = req.user?.id || null;
+        const email = req.user?.email || null;
+
+        if (!userId && !email) {
+            return res.status(401).json({ error: 'Authentication required to check booking status' });
+        }
+
+        const status = await hasUserBookedEvent({ eventId, userId, email });
+        res.status(200).json(status);
+    } catch (err) {
+        console.error('getBookingStatus error:', err);
+        res.status(500).json({ error: 'Failed to check booking status' });
+    }
+};
+
+/**
  * POST /events/bookings/verify-payment or /api/events/bookings/verify-payment
  * Verify Razorpay payment signature and confirm booking
  */
@@ -93,10 +120,13 @@ export const verifyPayment = async (req, res) => {
             });
         }
 
+        const userId = req.user?.id || null;
+
         const result = await verifyEventPaymentAndConfirm({
             razorpay_order_id,
             razorpay_payment_id,
             razorpay_signature,
+            userId,
         });
 
         res.status(200).json(result);

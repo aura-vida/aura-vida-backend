@@ -6,6 +6,7 @@ import {
     verifyPayment,
     listBookings,
     getBooking,
+    getBookingStatus,
 } from '../controllers/event.controller.js';
 import { requireAuth, optionalAuth } from '../middleware/auth.middleware.js';
 
@@ -16,8 +17,9 @@ router.get('/', getEventsList);
 
 // ── Event Booking & Razorpay Flow ────────────────────────────
 // Note: Bookings routes are defined before `/:id` to prevent route collision
-router.post('/bookings/create-order', optionalAuth, createOrder);
-router.post('/bookings/verify-payment', optionalAuth, verifyPayment);
+router.post('/bookings/create-order', requireAuth, createOrder);
+router.post('/bookings/verify-payment', requireAuth, verifyPayment);
+router.get('/bookings/status/:eventId', requireAuth, getBookingStatus);
 router.get('/bookings', requireAuth, listBookings);
 router.get('/bookings/:id', optionalAuth, getBooking);
 
