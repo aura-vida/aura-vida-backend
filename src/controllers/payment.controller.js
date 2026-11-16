@@ -11,6 +11,7 @@ import { getPractitionerBySlug } from '../models/practitioner.model.js';
 import { getServiceById } from '../models/service.model.js';
 import { istToUtcIso } from '../utils/timezone.js';
 import { resolveCoupon } from '../models/coupon.model.js';
+import { calculateSpaceFee } from '../config/spacePricing.js';
 
 // Flat tax applied to the session subtotal, client-requested for now.
 // Keep in sync with SESSION_TAX_RATE in kusala-connect/src/lib/pricing.ts
@@ -37,6 +38,8 @@ export const createOrder = async (req, res) => {
             service_id, practitioner_slug, date, time,
             mode = 'offline', pin, meeting_location,
             group_size = 1, attendees = [], coupon_code,
+            // Space pricing fields (only relevant when mode === 'centre')
+            space_id = null, duration_hours = 1,
         } = req.body;
 
         if (!service_id || !practitioner_slug || !date || !time) {
@@ -86,6 +89,52 @@ export const createOrder = async (req, res) => {
             originalSubtotalInr = fallbackInr + Math.round(fallbackInr * 0.6) * Math.max(0, size - 1);
         }
 
+        // ── Space Fee (only when mode === 'centre' and space selected) ───────────
+        // Backend is authoritative; we fetch the space from partner_spaces and recalculate from
+        // the pricing config — we never trust the client-sent amount.
+        let spacePricing = null;
+        let spaceName = null;
+        let spaceTypeName = null;
+
+        if (normalizedMode === 'centre') {
+            let spaceRow = null;
+            if (space_id) {
+                const { data, error } = await supabase
+                    .from('partner_spaces')
+                    .select('id, space_name, space_type')
+                    .eq('id', space_id)
+                    .maybeSingle();
+                if (!error && data) spaceRow = data;
+            }
+
+            // Fallback: search by meeting_location address/name if space_id wasn't provided or didn't match
+            if (!spaceRow && meeting_location?.address) {
+                const { data } = await supabase
+                    .from('partner_spaces')
+                    .select('id, space_name, space_type')
+                    .ilike('space_name', `%${meeting_location.address}%`)
+                    .limit(1)
+                    .maybeSingle();
+                if (data) spaceRow = data;
+            }
+
+            if (spaceRow) {
+                spaceName = spaceRow.space_name;
+                spaceTypeName = spaceRow.space_type;
+                spacePricing = calculateSpaceFee(
+                    spaceRow.space_type,
+                    spaceRow.space_name,
+                    size,
+                    date,
+                    duration_hours
+                );
+            }
+        }
+
+        const spaceSubtotalInr   = spacePricing ? spacePricing.spaceSubtotal   : 0;
+        const spaceGstInr        = spacePricing ? spacePricing.gstAmount        : 0;
+        const totalSpaceCostInr  = spacePricing ? spacePricing.totalSpaceCost   : 0;
+
         // Admin-managed coupon (see coupon.model.js) — eligibility rules
         // (first-booking-only, minimum booking amount) re-validated here
         // regardless of any earlier /api/coupons/validate preview call,
@@ -105,7 +154,8 @@ export const createOrder = async (req, res) => {
         // mirrors this for preview.
         const taxInr = Math.round(subtotalInr * SESSION_TAX_RATE);
         const totalInr = subtotalInr + taxInr;
-        const amountPaise = Math.round(totalInr * 100);
+        // Add space cost (space subtotal + 18% GST) on top of practitioner total.
+        const amountPaise = Math.round((totalInr + totalSpaceCostInr) * 100);
 
         // 3. Fetch referral credit for the customer
         const { data: profile } = await supabase
@@ -151,6 +201,19 @@ export const createOrder = async (req, res) => {
                 attendees: attendees || [],
                 meeting_location: meeting_location || null,
                 pin: pin || null,
+                // Space pricing snapshot (null when no space selected)
+                space_id: space_id || null,
+                space_name: spaceName || null,
+                space_type: spaceTypeName || null,
+                duration_hours: duration_hours || null,
+                practitioner_subtotal: originalSubtotalInr,
+                practitioner_tax: taxInr,
+                space_subtotal: spaceSubtotalInr,
+                space_gst_percent: spacePricing ? 18 : null,
+                space_gst_amount: spaceGstInr,
+                total_space_cost: totalSpaceCostInr,
+                final_amount: totalInr + totalSpaceCostInr,
+                space_pricing_snapshot: spacePricing ? spacePricing.pricingSnapshot : null,
             },
         });
 
@@ -169,6 +232,13 @@ export const createOrder = async (req, res) => {
             couponCode,
             discountPercent,
             discountInr,
+            // Space pricing (null fields when no space selected)
+            spaceSubtotalInr,
+            spaceGstInr,
+            totalSpaceCostInr,
+            spaceHourlyRate: spacePricing?.hourlyRate ?? null,
+            spaceDurationHours: spacePricing?.durationHours ?? null,
+            spaceGstPercent: spacePricing ? 18 : null,
         });
     } catch (err) {
         console.error('createOrder error:', err);
