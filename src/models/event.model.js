@@ -5,10 +5,13 @@ import { sendEmail } from '../services/email.service.js';
 const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID;
 const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET;
 
-// Configurable GST percentage (defaults to 5%)
-export const EVENT_GST_PERCENTAGE = process.env.EVENT_GST_PERCENTAGE
+// Configurable GST percentage (temporarily disabled platform-wide)
+// To re-enable in the future, set ENABLE_GST = true or set ENABLE_GST=true in environment variables.
+export const ENABLE_GST = process.env.ENABLE_GST === 'true'; // defaults to false (disabled)
+export const ORIGINAL_EVENT_GST_PERCENTAGE = process.env.EVENT_GST_PERCENTAGE
     ? Number(process.env.EVENT_GST_PERCENTAGE)
     : 5;
+export const EVENT_GST_PERCENTAGE = ENABLE_GST ? ORIGINAL_EVENT_GST_PERCENTAGE : 0;
 
 // ─── Static Events Catalog ───────────────────────────────────────────────────
 export const STATIC_EVENTS = {
@@ -60,8 +63,8 @@ export const STATIC_EVENTS = {
  */
 export const calculateEventPrice = (basePriceInr, gstPercent = EVENT_GST_PERCENTAGE) => {
     const base = Number(basePriceInr);
-    const gstRate = Number(gstPercent);
-    const gstAmount = Math.round((base * gstRate) / 100);
+    const gstRate = ENABLE_GST ? Number(gstPercent) : 0;
+    const gstAmount = ENABLE_GST ? Math.round((base * gstRate) / 100) : 0;
     const totalAmount = base + gstAmount;
     const amountPaise = totalAmount * 100;
 
@@ -500,10 +503,10 @@ export const verifyEventPaymentAndConfirm = async ({ razorpay_order_id, razorpay
                                     <td style="padding: 4px 0;">Event Price</td>
                                     <td style="padding: 4px 0; text-align: right;">₹${Number(booking.base_amount).toLocaleString('en-IN')}</td>
                                 </tr>
-                                <tr>
+                                ${Number(booking.gst_amount) > 0 ? `<tr>
                                     <td style="padding: 4px 0;">GST (${booking.gst_percentage}%)</td>
                                     <td style="padding: 4px 0; text-align: right;">₹${Number(booking.gst_amount).toLocaleString('en-IN')}</td>
-                                </tr>
+                                </tr>` : ''}
                                 <tr style="border-top: 1px solid #cbd5e1; font-weight: 600; color: #0f172a;">
                                     <td style="padding: 8px 0;">Total Paid</td>
                                     <td style="padding: 8px 0; text-align: right; color: #0d9488;">₹${Number(booking.total_amount).toLocaleString('en-IN')}</td>

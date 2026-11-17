@@ -28,6 +28,7 @@ const razorpayRequest = async (path, method = 'POST', body = null) => {
 export const createRazorpayOrder = async ({
     serviceId, amountPaise, subtotalInr, taxInr, originalSubtotalInr, couponCode, discountPercent, discountInr,
     serviceName, groupSize = 1, customer, referralCredit = 0, bookingPayload,
+    spaceSubtotalInr = 0, spaceGstInr = 0,
 }) => {
     // Apply referral credit on top (never go below ₹1 i.e. 100 paise, which is Razorpay's minimum)
     const creditPaise = referralCredit * 100;
@@ -45,6 +46,8 @@ export const createRazorpayOrder = async ({
             group_size: String(groupSize),
             subtotal_inr: String(subtotalInr ?? ''),
             tax_inr: String(taxInr ?? ''),
+            space_subtotal_inr: String(spaceSubtotalInr ?? 0),
+            space_gst_inr: String(spaceGstInr ?? 0),
             ...(couponCode ? { coupon_code: couponCode, discount_inr: String(discountInr ?? '') } : {}),
         },
     });
@@ -69,6 +72,8 @@ export const createRazorpayOrder = async ({
                 user_id: customer?.userId || null,
                 subtotal_inr: subtotalInr,
                 tax_inr: taxInr,
+                space_subtotal_inr: spaceSubtotalInr,
+                space_gst_inr: spaceGstInr,
                 original_subtotal_inr: originalSubtotalInr,
                 coupon_code: couponCode || null,
                 discount_percent: discountPercent || 0,
@@ -118,6 +123,7 @@ const sendPaymentReceiptEmail = async (order, paymentId) => {
     }
 
     const subtotalInr = Number(order.details?.subtotal_inr ?? 0);
+    const spaceSubtotalInr = Number(order.details?.space_subtotal_inr ?? 0);
     const taxInr = Number(order.details?.tax_inr ?? 0);
     const creditInr = Number(order.details?.credit_applied_inr ?? 0);
     const originalSubtotalInr = Number(order.details?.original_subtotal_inr ?? subtotalInr);
@@ -160,6 +166,7 @@ const sendPaymentReceiptEmail = async (order, paymentId) => {
             <table style="width:100%;font-size:14px;color:#333;">
               ${originalSubtotalInr ? `<tr><td style="padding:6px 0;color:#888;">Session Price</td><td style="padding:6px 0;text-align:right;">₹${originalSubtotalInr.toLocaleString('en-IN')}</td></tr>` : ''}
               ${couponCode && discountInr > 0 ? `<tr><td style="padding:6px 0;color:#1a5c38;">Coupon ${couponCode} (−${order.details?.discount_percent}%)</td><td style="padding:6px 0;text-align:right;color:#1a5c38;">−₹${discountInr.toLocaleString('en-IN')}</td></tr>` : ''}
+              ${order.details?.space_subtotal_inr ? `<tr><td style="padding:6px 0;color:#888;">Partner Space Fee</td><td style="padding:6px 0;text-align:right;">₹${Number(order.details.space_subtotal_inr).toLocaleString('en-IN')}</td></tr>` : ''}
               ${taxInr ? `<tr><td style="padding:6px 0;color:#888;">Tax (5%)</td><td style="padding:6px 0;text-align:right;">₹${taxInr.toLocaleString('en-IN')}</td></tr>` : ''}
               ${creditInr > 0 ? `<tr><td style="padding:6px 0;color:#1a5c38;">Referral Credit Applied</td><td style="padding:6px 0;text-align:right;color:#1a5c38;">−₹${creditInr.toLocaleString('en-IN')}</td></tr>` : ''}
             </table>
@@ -619,7 +626,8 @@ export const createRefund = async (bookingId, reason = 'requested_by_customer') 
     // Orders created before the tax feature have no `subtotal_inr` on record —
     // those never had tax applied in the first place, so refund them in full.
     const subtotalInr = Number(order.details?.subtotal_inr ?? 0);
-    const subtotalPaise = Math.round(subtotalInr * 100);
+    const spaceSubtotalInr = Number(order.details?.space_subtotal_inr ?? 0);
+    const subtotalPaise = Math.round((subtotalInr + spaceSubtotalInr) * 100);
     // Never refund more than was actually charged (covers the case where
     // referral credit reduced the amount actually paid below the subtotal).
     const refundAmount = subtotalPaise > 0 ? Math.min(subtotalPaise, order.amount) : order.amount;
