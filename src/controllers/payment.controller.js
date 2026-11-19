@@ -12,10 +12,11 @@ import { getServiceById } from '../models/service.model.js';
 import { istToUtcIso } from '../utils/timezone.js';
 import { resolveCoupon } from '../models/coupon.model.js';
 
-// Flat tax applied to the session subtotal, client-requested for now.
-// Keep in sync with SESSION_TAX_RATE in kusala-connect/src/lib/pricing.ts
-// (that copy is display-only — this is the authoritative one).
-export const SESSION_TAX_RATE = 0.05;
+// Configurable GST/tax toggle. Temporarily set to false to disable GST/tax platform-wide.
+// To re-enable in the future, set ENABLE_GST = true or set ENABLE_GST=true in environment variables.
+export const ENABLE_GST = process.env.ENABLE_GST === 'true'; // defaults to false (disabled)
+export const ORIGINAL_SESSION_TAX_RATE = 0.05;
+export const SESSION_TAX_RATE = ENABLE_GST ? ORIGINAL_SESSION_TAX_RATE : 0;
 
 // ─── Helper: fetch profile full_name for client_name denorm ──────────────────
 const getProfileName = async (userId) => {
@@ -37,6 +38,7 @@ export const createOrder = async (req, res) => {
             service_id, practitioner_slug, date, time,
             mode = 'offline', pin, meeting_location,
             group_size = 1, attendees = [], coupon_code,
+            space_id, duration_hours = 1,
         } = req.body;
 
         if (!service_id || !practitioner_slug || !date || !time) {
@@ -100,11 +102,80 @@ export const createOrder = async (req, res) => {
         const discountInr = Math.round(originalSubtotalInr * discountPercent / 100);
         const subtotalInr = originalSubtotalInr - discountInr; // post-coupon, pre-tax
 
+        // ─── 2b. Compute partner space fee if booking at partner centre ──────
+        let spaceSubtotalInr = 0;
+        let spaceGstInr = 0;
+        let spacePricingSnapshot = null;
+
+        if (normalizedMode === 'centre') {
+            let spaceData = null;
+            if (space_id) {
+                const { data } = await supabase
+                    .from('partner_spaces')
+                    .select('*')
+                    .eq('id', space_id)
+                    .maybeSingle();
+                spaceData = data;
+            }
+            if (!spaceData && meeting_location?.address) {
+                const { data } = await supabase
+                    .from('partner_spaces')
+                    .select('*')
+                    .ilike('space_name', `%${meeting_location.address}%`)
+                    .maybeSingle();
+                spaceData = data;
+            }
+
+            const spaceName = spaceData?.space_name || meeting_location?.address || '';
+            const spaceType = spaceData?.space_type || '';
+            const combined = `${spaceType} ${spaceName}`.toLowerCase();
+
+            let spaceCategory = null;
+            if (combined.includes('hour')) spaceCategory = 'hour_space';
+            else if (combined.includes('eclipse')) spaceCategory = 'eclipse';
+            else if (combined.includes('bohemiso')) spaceCategory = 'bohemiso';
+
+            const hours = Math.max(1, Math.round(Number(duration_hours) || 1));
+            const count = Math.max(1, Math.round(Number(group_size) || 1));
+
+            let hourlyRate = 0;
+            if (spaceCategory === 'hour_space') {
+                const [y, m, d] = (date || '').split('-').map(Number);
+                const dateObj = new Date(y, m - 1, d);
+                const isSunday = dateObj.getDay() === 0;
+                if (isSunday) {
+                    hourlyRate = count <= 2 ? 1100 : count <= 4 ? 1485 : 1650;
+                } else {
+                    hourlyRate = count <= 2 ? 825 : count <= 4 ? 1100 : 1485;
+                }
+            } else if (spaceCategory === 'eclipse') {
+                hourlyRate = count <= 5 ? 1500 : 3000;
+            } else if (spaceCategory === 'bohemiso') {
+                hourlyRate = 1500;
+            }
+
+            if (hourlyRate > 0) {
+                spaceSubtotalInr = hourlyRate * hours;
+                spaceGstInr = ENABLE_GST ? Math.round(spaceSubtotalInr * 0.18) : 0;
+                spacePricingSnapshot = {
+                    space_id: spaceData?.id || space_id || null,
+                    space_name: spaceName || 'Partner Space',
+                    space_type: spaceCategory,
+                    hourly_rate: hourlyRate,
+                    duration_hours: hours,
+                    space_subtotal_inr: spaceSubtotalInr,
+                    space_gst_inr: spaceGstInr,
+                    total_space_cost_inr: spaceSubtotalInr + spaceGstInr,
+                };
+            }
+        }
+
         // Flat tax on the (post-coupon) session subtotal. This, not any
         // client-sent value, is the authoritative amount — the frontend only
         // mirrors this for preview.
-        const taxInr = Math.round(subtotalInr * SESSION_TAX_RATE);
-        const totalInr = subtotalInr + taxInr;
+        // When ENABLE_GST is false, tax is 0 and total is strictly the base subtotals.
+        const taxInr = ENABLE_GST ? Math.round(subtotalInr * SESSION_TAX_RATE) : 0;
+        const totalInr = subtotalInr + taxInr + spaceSubtotalInr + spaceGstInr;
         const amountPaise = Math.round(totalInr * 100);
 
         // 3. Fetch referral credit for the customer
@@ -124,6 +195,8 @@ export const createOrder = async (req, res) => {
             subtotalInr,
             taxInr,
             originalSubtotalInr,
+            spaceSubtotalInr,
+            spaceGstInr,
             couponCode,
             discountPercent,
             discountInr,
@@ -151,6 +224,7 @@ export const createOrder = async (req, res) => {
                 attendees: attendees || [],
                 meeting_location: meeting_location || null,
                 pin: pin || null,
+                space_pricing_snapshot: spacePricingSnapshot || null,
             },
         });
 
@@ -166,6 +240,9 @@ export const createOrder = async (req, res) => {
             subtotalInr,
             taxInr,
             taxRate: SESSION_TAX_RATE,
+            spaceSubtotalInr,
+            spaceGstInr,
+            totalInr,
             couponCode,
             discountPercent,
             discountInr,

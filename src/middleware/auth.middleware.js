@@ -58,3 +58,41 @@ export const requireRole = (...roles) => {
         next();
     };
 };
+
+/**
+ * optionalAuth - extracts user if valid Bearer token provided, but doesn't block guests
+ */
+export const optionalAuth = async (req, res, next) => {
+    try {
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return next();
+        }
+
+        const token = authHeader.split(' ')[1];
+        const { data: { user }, error } = await supabaseAuth.auth.getUser(token);
+        if (!error && user) {
+            const { data: roleData } = await supabase
+                .from('user_roles')
+                .select('role')
+                .eq('user_id', user.id)
+                .single();
+
+            const { data: profileData } = await supabase
+                .from('profiles')
+                .select('full_name, phone')
+                .eq('id', user.id)
+                .maybeSingle();
+
+            req.user = {
+                ...user,
+                role: roleData?.role,
+                full_name: profileData?.full_name,
+                phone: profileData?.phone,
+            };
+        }
+    } catch {
+        // Continue gracefully
+    }
+    next();
+};
