@@ -129,3 +129,70 @@ export const deleteMyService = async (req, res) => {
         res.status(status).json({ error: err.message || 'Failed to delete service' });
     }
 };
+
+// GET /api/modalities (For mobile app and external clients)
+export const getModalities = async (req, res) => {
+    try {
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        const modalities = [
+            {
+                name: "Yoga",
+                slug: "yoga",
+                image_url: `${baseUrl}/images/modalities/modality-yoga.jpg`,
+                description: "Mindful movement and breath to build strength, flexibility, and inner calm."
+            },
+            {
+                name: "Energy Healing",
+                slug: "energy-healing",
+                image_url: `${baseUrl}/images/modalities/modality-energy-healing.jpg`,
+                description: "Gentle hands-on work to restore your nervous system and energetic flow."
+            },
+            {
+                name: "Sound Healing",
+                slug: "sound-healing",
+                image_url: `${baseUrl}/images/modalities/modality-sound-healing.jpg`,
+                description: "Tibetan and crystal bowls tuned to bring deep coherence to body and mind."
+            },
+            {
+                name: "Astrology & Tarot",
+                slug: "astrology-tarot",
+                image_url: `${baseUrl}/images/modalities/modality-astrology-tarot.jpg`,
+                description: "Intuitive guidance, astrological insight, and archetypal card readings."
+            },
+            {
+                name: "Meditation",
+                slug: "meditation",
+                image_url: `${baseUrl}/images/modalities/modality-meditation.jpg`,
+                description: "Guided presence and mindfulness practices for mental clarity and stillness."
+            },
+            {
+                name: "Breathwork",
+                slug: "breathwork",
+                image_url: `${baseUrl}/images/modalities/modality-breathwork.jpg`,
+                description: "Conscious connected breathing for somatic release and nervous system regulation."
+            },
+            {
+                name: "Craniosacral therapy",
+                slug: "craniosacral-therapy",
+                image_url: `${baseUrl}/images/modalities/modality-craniosacral.jpg`,
+                description: "Subtle osteopathic touch releasing deep-seated tension in the central nervous system."
+            },
+            {
+                name: "Theta Healing",
+                slug: "theta-healing",
+                image_url: `${baseUrl}/images/modalities/modality-theta-healing.jpg`,
+                description: "Meditative technique accessing theta brainwaves to transform limiting beliefs."
+            },
+            {
+                name: "Holistic Life Coaching",
+                slug: "holistic-life-coaching",
+                image_url: `${baseUrl}/images/modalities/modality-meditation.jpg`,
+                description: "Integrative lifestyle, wellness guidance, and personal empowerment."
+            }
+        ];
+        res.status(200).json({ modalities });
+    } catch (err) {
+        console.error('getModalities error:', err);
+        res.status(500).json({ error: 'Failed to fetch modalities' });
+    }
+};

@@ -3,6 +3,7 @@ import {
     getServices,
     getAdminServices,
     getService,
+    getModalities,
 } from '../controllers/service.controller.js';
 import { requireAuth, requireRole } from '../middleware/auth.middleware.js';
 
@@ -51,6 +52,7 @@ const router = express.Router();
  *                   $ref: '#/components/schemas/Pagination'
  */
 router.get('/services', getServices);
+router.get('/modalities', getModalities);
 
 /**
  * @swagger
