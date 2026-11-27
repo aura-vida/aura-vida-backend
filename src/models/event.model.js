@@ -61,14 +61,18 @@ export const STATIC_EVENTS = {
  * Dynamically calculates the pricing breakdown for an event based on its base price
  * and the configured GST rate.
  */
-export const calculateEventPrice = (basePriceInr, gstPercent = EVENT_GST_PERCENTAGE) => {
-    const base = Number(basePriceInr);
+export const calculateEventPrice = (basePriceInr, gstPercent = EVENT_GST_PERCENTAGE, quantity = 1) => {
+    const qty = Math.max(1, parseInt(quantity, 10) || 1);
+    const unitPrice = Number(basePriceInr);
+    const base = unitPrice * qty;
     const gstRate = ENABLE_GST ? Number(gstPercent) : 0;
     const gstAmount = ENABLE_GST ? Math.round((base * gstRate) / 100) : 0;
     const totalAmount = base + gstAmount;
     const amountPaise = totalAmount * 100;
 
     return {
+        unitPrice,
+        ticketQuantity: qty,
         baseAmount: base,
         gstPercentage: gstRate,
         gstAmount,
@@ -124,7 +128,7 @@ const razorpayRequest = async (path, method = 'POST', body = null) => {
  */
 export const hasUserBookedEvent = async ({ eventId, userId = null, email = null }) => {
     if (!eventId || (!userId && !email)) {
-        return { isBooked: false, booking: null };
+        return { isBooked: false, totalTickets: 0, booking: null, bookings: [] };
     }
 
     const normalizedEmail = email ? email.trim().toLowerCase() : null;
@@ -144,10 +148,11 @@ export const hasUserBookedEvent = async ({ eventId, userId = null, email = null 
             query = query.eq('customer_email', normalizedEmail);
         }
 
-        const { data, error } = await query.limit(1).maybeSingle();
+        const { data, error } = await query;
         if (error) throw error;
-        if (data) {
-            return { isBooked: true, booking: data };
+        if (data && data.length > 0) {
+            const totalTickets = data.reduce((acc, b) => acc + (Number(b.ticket_quantity) || 1), 0);
+            return { isBooked: true, totalTickets, booking: data[0], bookings: data };
         }
     } catch (err) {
         console.warn('[EVENT MODEL] Error in hasUserBookedEvent event_bookings check, trying fallback:', err.message);
@@ -165,82 +170,52 @@ export const hasUserBookedEvent = async ({ eventId, userId = null, email = null 
             query = query.eq('customer_email', normalizedEmail);
         }
 
-        const { data, error } = await query.limit(1).maybeSingle();
-        if (!error && data) {
-            return {
-                isBooked: true,
-                booking: {
-                    id: data.id,
-                    event_id: data.item_id,
-                    event_name: data.item_name,
-                    user_id: data.details?.user_id || userId,
-                    customer_name: data.customer_name,
-                    customer_email: data.customer_email,
-                    customer_phone: data.customer_phone,
-                    base_amount: data.details?.base_amount || 2500,
-                    gst_percentage: data.details?.gst_percentage || 5,
-                    gst_amount: data.details?.gst_amount || 125,
-                    total_amount: data.details?.total_amount || 2625,
-                    currency: data.currency || 'INR',
-                    razorpay_order_id: data.razorpay_order_id,
-                    razorpay_payment_id: data.razorpay_payment_id,
-                    payment_status: 'SUCCESS',
-                    booking_status: 'CONFIRMED',
-                    created_at: data.created_at,
-                    updated_at: data.updated_at || data.created_at,
-                },
-            };
-        }
-
-        // If not matched by email, also check by userId in order details
-        if (userId) {
-            const { data: allOrders } = await supabase
-                .from('orders')
-                .select('*')
-                .eq('item_id', eventId)
-                .eq('status', 'paid');
-
-            const match = (allOrders || []).find(
-                (o) => o.details?.user_id === userId || (normalizedEmail && o.customer_email?.toLowerCase() === normalizedEmail)
-            );
-
-            if (match) {
-                return {
-                    isBooked: true,
-                    booking: {
-                        id: match.id,
-                        event_id: match.item_id,
-                        event_name: match.item_name,
-                        user_id: match.details?.user_id || userId,
-                        customer_name: match.customer_name,
-                        customer_email: match.customer_email,
-                        customer_phone: match.customer_phone,
-                        base_amount: match.details?.base_amount || 2500,
-                        gst_percentage: match.details?.gst_percentage || 5,
-                        gst_amount: match.details?.gst_amount || 125,
-                        total_amount: match.details?.total_amount || 2625,
-                        currency: match.currency || 'INR',
-                        razorpay_order_id: match.razorpay_order_id,
-                        razorpay_payment_id: match.razorpay_payment_id,
-                        payment_status: 'SUCCESS',
-                        booking_status: 'CONFIRMED',
-                        created_at: match.created_at,
-                        updated_at: match.updated_at || match.created_at,
-                    },
-                };
-            }
+        const { data, error } = await query;
+        if (!error && data && data.length > 0) {
+            const mapped = data.map((d) => ({
+                id: d.id,
+                event_id: d.item_id,
+                event_name: d.item_name,
+                user_id: d.details?.user_id || userId,
+                customer_name: d.customer_name,
+                customer_email: d.customer_email,
+                customer_phone: d.customer_phone,
+                ticket_quantity: Number(d.details?.ticket_quantity) || 1,
+                ticket_price: Number(d.details?.ticket_price) || Math.round((d.details?.base_amount || 2500) / (d.details?.ticket_quantity || 1)),
+                base_amount: Number(d.details?.base_amount) || 2500,
+                gst_percentage: Number(d.details?.gst_percentage) || 5,
+                gst_amount: Number(d.details?.gst_amount) || 125,
+                total_amount: Number(d.details?.total_amount) || 2625,
+                currency: d.currency || 'INR',
+                razorpay_order_id: d.razorpay_order_id,
+                razorpay_payment_id: d.razorpay_payment_id,
+                payment_status: 'SUCCESS',
+                booking_status: 'CONFIRMED',
+                created_at: d.created_at,
+                updated_at: d.updated_at || d.created_at,
+            }));
+            const totalTickets = mapped.reduce((acc, b) => acc + (b.ticket_quantity || 1), 0);
+            return { isBooked: true, totalTickets, booking: mapped[0], bookings: mapped };
         }
     } catch (err) {
         console.warn('[EVENT MODEL] Error in fallback orders check:', err.message);
     }
 
-    return { isBooked: false, booking: null };
+    return { isBooked: false, totalTickets: 0, booking: null, bookings: [] };
 };
 
 /**
  * Creates a Razorpay order for an event booking, persists initial booking as PENDING.
+ * Supports multiple tickets per order.
  */
-export const createEventBookingOrder = async ({ eventId, customerName, customerEmail, customerPhone, userId = null }) => {
+export const createEventBookingOrder = async ({
+    eventId,
+    customerName,
+    customerEmail,
+    customerPhone,
+    ticketQuantity = 1,
+    userId = null,
+}) => {
     const event = getStaticEvent(eventId);
     if (!event) {
         throw Object.assign(new Error(`Event '${eventId}' not found.`), { statusCode: 404 });
@@ -250,20 +225,12 @@ export const createEventBookingOrder = async ({ eventId, customerName, customerE
         throw Object.assign(new Error('customerName, customerEmail, and customerPhone are required.'), { statusCode: 400 });
     }
 
-    // Prevent duplicate bookings: Ensure user doesn't already have a CONFIRMED booking
-    const duplicateCheck = await hasUserBookedEvent({
-        eventId: event.id,
-        userId,
-        email: customerEmail,
-    });
-    if (duplicateCheck.isBooked) {
-        throw Object.assign(
-            new Error('You have already booked a seat for this event. Duplicate bookings are not allowed.'),
-            { statusCode: 400 }
-        );
+    const qty = Math.max(1, parseInt(ticketQuantity, 10) || 1);
+    if (!Number.isInteger(qty) || qty < 1 || qty > 20) {
+        throw Object.assign(new Error('ticketQuantity must be an integer between 1 and 20.'), { statusCode: 400 });
     }
 
-    const pricing = calculateEventPrice(event.pricing.basePriceInr, EVENT_GST_PERCENTAGE);
+    const pricing = calculateEventPrice(event.pricing.basePriceInr, EVENT_GST_PERCENTAGE, qty);
 
     // Create order with Razorpay
     const receipt = `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -277,6 +244,8 @@ export const createEventBookingOrder = async ({ eventId, customerName, customerE
             customer_name: customerName,
             customer_email: customerEmail,
             customer_phone: customerPhone,
+            ticket_quantity: String(pricing.ticketQuantity),
+            ticket_price: String(pricing.unitPrice),
             base_amount: String(pricing.baseAmount),
             gst_amount: String(pricing.gstAmount),
             total_amount: String(pricing.totalAmount),
@@ -290,6 +259,8 @@ export const createEventBookingOrder = async ({ eventId, customerName, customerE
         customer_name: customerName,
         customer_email: customerEmail.trim().toLowerCase(),
         customer_phone: customerPhone.trim(),
+        ticket_quantity: pricing.ticketQuantity,
+        ticket_price: pricing.unitPrice,
         base_amount: pricing.baseAmount,
         gst_percentage: pricing.gstPercentage,
         gst_amount: pricing.gstAmount,
@@ -332,6 +303,8 @@ export const createEventBookingOrder = async ({ eventId, customerName, customerE
                 customer_phone: customerPhone,
                 details: {
                     user_id: userId,
+                    ticket_quantity: pricing.ticketQuantity,
+                    ticket_price: pricing.unitPrice,
                     base_amount: pricing.baseAmount,
                     gst_percentage: pricing.gstPercentage,
                     gst_amount: pricing.gstAmount,
@@ -447,6 +420,8 @@ export const verifyEventPaymentAndConfirm = async ({ razorpay_order_id, razorpay
             .maybeSingle();
 
         const evt = getStaticEvent(ord?.item_id || 'breathe-release-return') || STATIC_EVENTS['breathe-release-return'];
+        const qty = Number(ord?.details?.ticket_quantity) || 1;
+        const unitPrice = Number(ord?.details?.ticket_price) || Math.round((Number(ord?.details?.base_amount) || 2500) / qty);
         booking = {
             id: ord?.id || razorpay_order_id,
             event_id: evt.id,
@@ -455,10 +430,12 @@ export const verifyEventPaymentAndConfirm = async ({ razorpay_order_id, razorpay
             customer_name: ord?.customer_name || 'Guest',
             customer_email: ord?.customer_email || '',
             customer_phone: ord?.customer_phone || '',
-            base_amount: ord?.details?.base_amount || 2500,
-            gst_percentage: ord?.details?.gst_percentage || 5,
-            gst_amount: ord?.details?.gst_amount || 125,
-            total_amount: ord?.details?.total_amount || 2625,
+            ticket_quantity: qty,
+            ticket_price: unitPrice,
+            base_amount: Number(ord?.details?.base_amount) || (unitPrice * qty),
+            gst_percentage: Number(ord?.details?.gst_percentage) || 5,
+            gst_amount: Number(ord?.details?.gst_amount) || 0,
+            total_amount: Number(ord?.details?.total_amount) || (unitPrice * qty),
             currency: 'INR',
             razorpay_order_id,
             razorpay_payment_id,
@@ -467,11 +444,17 @@ export const verifyEventPaymentAndConfirm = async ({ razorpay_order_id, razorpay
             created_at: ord?.created_at || now,
             updated_at: now,
         };
+    } else {
+        booking.ticket_quantity = Number(booking.ticket_quantity) || 1;
+        booking.ticket_price = Number(booking.ticket_price) || Math.round(Number(booking.base_amount) / booking.ticket_quantity);
     }
 
     // 3. Send email confirmation to customer
     try {
         const evt = getStaticEvent(booking.event_id) || STATIC_EVENTS['breathe-release-return'];
+        const ticketQty = Number(booking.ticket_quantity) || 1;
+        const ticketUnit = Number(booking.ticket_price) || Math.round(Number(booking.base_amount) / ticketQty);
+
         await sendEmail({
             to: booking.customer_email,
             subject: `[Kusala] Workshop Booking Confirmed – ${booking.event_name}`,
@@ -490,17 +473,30 @@ export const verifyEventPaymentAndConfirm = async ({ razorpay_order_id, razorpay
 
                         <div style="background-color: #f0fdfa; border: 1px solid #ccfbf1; border-radius: 14px; padding: 18px; margin: 20px 0;">
                             <h3 style="margin: 0 0 10px 0; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: #0f766e;">Event Details</h3>
+                            <p style="margin: 4px 0; font-size: 14px; color: #134e4a;"><strong>Event:</strong> ${booking.event_name}</p>
                             <p style="margin: 4px 0; font-size: 14px; color: #134e4a;"><strong>Date:</strong> ${evt.schedule.date}</p>
                             <p style="margin: 4px 0; font-size: 14px; color: #134e4a;"><strong>Time:</strong> ${evt.schedule.time} (${evt.schedule.duration})</p>
-                            <p style="margin: 4px 0; font-size: 14px; color: #134e4a;"><strong>Venue:</strong> ${evt.schedule.venue}</p>
+                            <p style="margin: 4px 0; font-size: 14px; color: #134e4a;"><strong>Venue / Location:</strong> ${evt.schedule.venue}</p>
                             <p style="margin: 4px 0; font-size: 14px; color: #134e4a;"><strong>Guide:</strong> ${evt.guide.name} (${evt.guide.craft})</p>
                         </div>
 
                         <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 18px; margin: 20px 0;">
-                            <h3 style="margin: 0 0 10px 0; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: #475569;">Payment Breakdown</h3>
+                            <h3 style="margin: 0 0 10px 0; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: #475569;">Booking & Payment Summary</h3>
                             <table style="width: 100%; font-size: 14px; color: #334155;">
                                 <tr>
-                                    <td style="padding: 4px 0;">Event Price</td>
+                                    <td style="padding: 4px 0;">Booking Status</td>
+                                    <td style="padding: 4px 0; text-align: right; color: #15803d; font-weight: 600;">Confirmed</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 4px 0;">Price per Ticket</td>
+                                    <td style="padding: 4px 0; text-align: right;">₹${ticketUnit.toLocaleString('en-IN')}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 4px 0;">Number of Tickets</td>
+                                    <td style="padding: 4px 0; text-align: right; font-weight: 600; color: #0f172a;">${ticketQty} Ticket${ticketQty > 1 ? 's' : ''}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 4px 0;">Subtotal</td>
                                     <td style="padding: 4px 0; text-align: right;">₹${Number(booking.base_amount).toLocaleString('en-IN')}</td>
                                 </tr>
                                 ${Number(booking.gst_amount) > 0 ? `<tr>
@@ -508,11 +504,14 @@ export const verifyEventPaymentAndConfirm = async ({ razorpay_order_id, razorpay
                                     <td style="padding: 4px 0; text-align: right;">₹${Number(booking.gst_amount).toLocaleString('en-IN')}</td>
                                 </tr>` : ''}
                                 <tr style="border-top: 1px solid #cbd5e1; font-weight: 600; color: #0f172a;">
-                                    <td style="padding: 8px 0;">Total Paid</td>
-                                    <td style="padding: 8px 0; text-align: right; color: #0d9488;">₹${Number(booking.total_amount).toLocaleString('en-IN')}</td>
+                                    <td style="padding: 8px 0; font-size: 15px;">Total Amount Paid</td>
+                                    <td style="padding: 8px 0; text-align: right; color: #0d9488; font-size: 16px;">₹${Number(booking.total_amount).toLocaleString('en-IN')}</td>
                                 </tr>
                             </table>
-                            <p style="font-size: 11px; color: #64748b; margin-top: 8px;">Payment ID: ${razorpay_payment_id}</p>
+                            <div style="font-size: 11px; color: #64748b; margin-top: 12px; border-top: 1px solid #e2e8f0; padding-top: 8px;">
+                                <p style="margin: 2px 0;">Booking / Order ID: <code style="font-family: monospace;">${booking.razorpay_order_id || booking.id}</code></p>
+                                <p style="margin: 2px 0;">Payment ID: <code style="font-family: monospace;">${razorpay_payment_id}</code></p>
+                            </div>
                         </div>
 
                         <div style="margin-top: 24px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b; line-height: 1.5;">
@@ -562,7 +561,18 @@ export const getEventBookings = async ({ userId = null, email = null, isAdmin = 
 
         const { data, error } = await query;
         if (error) throw error;
-        return data || [];
+        if (data && data.length > 0) {
+            return data.map((b) => {
+                const qty = Number(b.ticket_quantity) || 1;
+                const unitPrice = Number(b.ticket_price) || Math.round(Number(b.base_amount) / qty);
+                return {
+                    ...b,
+                    ticket_quantity: qty,
+                    ticket_price: unitPrice,
+                };
+            });
+        }
+        return [];
     } catch (err) {
         console.warn('[EVENT MODEL] Error fetching from event_bookings, falling back to orders:', err.message);
 
@@ -582,26 +592,32 @@ export const getEventBookings = async ({ userId = null, email = null, isAdmin = 
             return false;
         });
 
-        return filtered.map((o) => ({
-            id: o.id,
-            event_id: o.item_id,
-            event_name: o.item_name,
-            user_id: o.details?.user_id || null,
-            customer_name: o.customer_name,
-            customer_email: o.customer_email,
-            customer_phone: o.customer_phone,
-            base_amount: o.details?.base_amount || 2500,
-            gst_percentage: o.details?.gst_percentage || 5,
-            gst_amount: o.details?.gst_amount || 125,
-            total_amount: o.details?.total_amount || 2625,
-            currency: o.currency || 'INR',
-            razorpay_order_id: o.razorpay_order_id,
-            razorpay_payment_id: o.razorpay_payment_id,
-            payment_status: o.status === 'paid' ? 'SUCCESS' : 'PENDING',
-            booking_status: o.status === 'paid' ? 'CONFIRMED' : 'PENDING',
-            created_at: o.created_at,
-            updated_at: o.updated_at || o.created_at,
-        }));
+        return filtered.map((o) => {
+            const qty = Number(o.details?.ticket_quantity) || 1;
+            const unitPrice = Number(o.details?.ticket_price) || Math.round((Number(o.details?.base_amount) || 2500) / qty);
+            return {
+                id: o.id,
+                event_id: o.item_id,
+                event_name: o.item_name,
+                user_id: o.details?.user_id || null,
+                customer_name: o.customer_name,
+                customer_email: o.customer_email,
+                customer_phone: o.customer_phone,
+                ticket_quantity: qty,
+                ticket_price: unitPrice,
+                base_amount: Number(o.details?.base_amount) || (unitPrice * qty),
+                gst_percentage: Number(o.details?.gst_percentage) || 5,
+                gst_amount: Number(o.details?.gst_amount) || 0,
+                total_amount: Number(o.details?.total_amount) || (unitPrice * qty),
+                currency: o.currency || 'INR',
+                razorpay_order_id: o.razorpay_order_id,
+                razorpay_payment_id: o.razorpay_payment_id,
+                payment_status: o.status === 'paid' ? 'SUCCESS' : 'PENDING',
+                booking_status: o.status === 'paid' ? 'CONFIRMED' : 'PENDING',
+                created_at: o.created_at,
+                updated_at: o.updated_at || o.created_at,
+            };
+        });
     }
 };
 
@@ -617,7 +633,15 @@ export const getEventBookingById = async (id) => {
             .maybeSingle();
 
         if (error) throw error;
-        if (data) return data;
+        if (data) {
+            const qty = Number(data.ticket_quantity) || 1;
+            const unitPrice = Number(data.ticket_price) || Math.round(Number(data.base_amount) / qty);
+            return {
+                ...data,
+                ticket_quantity: qty,
+                ticket_price: unitPrice,
+            };
+        }
     } catch (err) {
         console.warn('[EVENT MODEL] getEventBookingById fallback to orders:', err.message);
     }
@@ -630,6 +654,9 @@ export const getEventBookingById = async (id) => {
 
     if (!ord) return null;
 
+    const qty = Number(ord.details?.ticket_quantity) || 1;
+    const unitPrice = Number(ord.details?.ticket_price) || Math.round((Number(ord.details?.base_amount) || 2500) / qty);
+
     return {
         id: ord.id,
         event_id: ord.item_id,
@@ -638,10 +665,12 @@ export const getEventBookingById = async (id) => {
         customer_name: ord.customer_name,
         customer_email: ord.customer_email,
         customer_phone: ord.customer_phone,
-        base_amount: ord.details?.base_amount || 2500,
-        gst_percentage: ord.details?.gst_percentage || 5,
-        gst_amount: ord.details?.gst_amount || 125,
-        total_amount: ord.details?.total_amount || 2625,
+        ticket_quantity: qty,
+        ticket_price: unitPrice,
+        base_amount: Number(ord.details?.base_amount) || (unitPrice * qty),
+        gst_percentage: Number(ord.details?.gst_percentage) || 5,
+        gst_amount: Number(ord.details?.gst_amount) || 0,
+        total_amount: Number(ord.details?.total_amount) || (unitPrice * qty),
         currency: ord.currency || 'INR',
         razorpay_order_id: ord.razorpay_order_id,
         razorpay_payment_id: ord.razorpay_payment_id,

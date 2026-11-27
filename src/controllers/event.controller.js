@@ -46,7 +46,7 @@ export const getEventDetail = async (req, res) => {
  */
 export const createOrder = async (req, res) => {
     try {
-        const { eventId, customerName, customerEmail, customerPhone } = req.body;
+        const { eventId, customerName, customerEmail, customerPhone, ticketQuantity } = req.body;
 
         if (!req.user || !req.user.id) {
             return res.status(401).json({ error: 'Authentication required. Please sign in to book an event.' });
@@ -54,6 +54,12 @@ export const createOrder = async (req, res) => {
 
         if (!eventId) {
             return res.status(400).json({ error: 'eventId is required' });
+        }
+
+        // Validate ticket quantity (must be positive integer between 1 and 20)
+        const parsedQuantity = parseInt(ticketQuantity, 10) || 1;
+        if (!Number.isInteger(parsedQuantity) || parsedQuantity < 1 || parsedQuantity > 20) {
+            return res.status(400).json({ error: 'ticketQuantity must be an integer between 1 and 20.' });
         }
 
         // Use logged-in user profile details if customer details are missing
@@ -73,6 +79,7 @@ export const createOrder = async (req, res) => {
             customerName: name,
             customerEmail: email,
             customerPhone: phone,
+            ticketQuantity: parsedQuantity,
             userId,
         });
 
