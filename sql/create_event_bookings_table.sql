@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS public.event_bookings (
     customer_name           text NOT NULL,
     customer_email          text NOT NULL,
     customer_phone          text NOT NULL,
+    ticket_quantity         integer NOT NULL DEFAULT 1,
+    ticket_price            numeric(10, 2) NOT NULL DEFAULT 2500,
     base_amount             numeric(10, 2) NOT NULL DEFAULT 2500,
     gst_percentage          numeric(5, 2) NOT NULL DEFAULT 5,
     gst_amount              numeric(10, 2) NOT NULL DEFAULT 125,
@@ -20,6 +22,10 @@ CREATE TABLE IF NOT EXISTS public.event_bookings (
     created_at              timestamptz NOT NULL DEFAULT now(),
     updated_at              timestamptz NOT NULL DEFAULT now()
 );
+
+-- Idempotent column additions for existing installations
+ALTER TABLE public.event_bookings ADD COLUMN IF NOT EXISTS ticket_quantity integer NOT NULL DEFAULT 1;
+ALTER TABLE public.event_bookings ADD COLUMN IF NOT EXISTS ticket_price numeric(10, 2) NOT NULL DEFAULT 2500;
 
 CREATE INDEX IF NOT EXISTS idx_event_bookings_event_id ON public.event_bookings (event_id);
 CREATE INDEX IF NOT EXISTS idx_event_bookings_user_id ON public.event_bookings (user_id);
